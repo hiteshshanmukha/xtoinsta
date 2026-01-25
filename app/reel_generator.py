@@ -385,6 +385,10 @@ class ReelGenerator:
             logger.info(f"Video will be positioned at ({video_x}, {video_y}) with size {new_w}x{new_h}")
             
             resized_video = video_clip.resized((new_w, new_h))
+            
+            # Add rounded corners to video
+            resized_video = self._add_rounded_corners(resized_video, radius=20)
+            
             resized_video = resized_video.with_position((video_x, video_y))
             
             # Create overlay with text and avatar - pass video position info
@@ -471,6 +475,35 @@ class ReelGenerator:
                 Path(video_path).unlink(missing_ok=True)
             except Exception as e:
                 logger.warning(f"Failed to delete temp video: {e}")
+    
+    def _add_rounded_corners(self, clip, radius=20):
+        """Add rounded corners to a video clip."""
+        from moviepy.video.fx.all import mask_color
+        
+        def make_frame_with_mask(get_frame, t):
+            """Apply rounded corner mask to each frame."""
+            frame = get_frame(t)
+            h, w = frame.shape[:2]
+            
+            # Create rounded rectangle mask
+            mask = Image.new('L', (w, h), 0)
+            draw = ImageDraw.Draw(mask)
+            draw.rounded_rectangle([(0, 0), (w, h)], radius=radius, fill=255)
+            
+            # Convert mask to numpy array
+            mask_array = np.array(mask) / 255.0
+            
+            # Apply mask to frame
+            if len(frame.shape) == 3:
+                mask_array = mask_array[:, :, np.newaxis]
+                frame = (frame * mask_array).astype(np.uint8)
+            
+            return frame
+        
+        # Apply mask to video
+        from moviepy.video.VideoClip import VideoClip
+        masked_clip = clip.fl(lambda gf, t: make_frame_with_mask(gf, t))
+        return masked_clip
     
     def _create_blurred_background(self, frame: np.ndarray) -> np.ndarray:
         """Create blurred background from video frame."""
@@ -598,12 +631,6 @@ class ReelGenerator:
                 text_color,
                 video_w  # Caption width matches video width
             )
-        
-        # BOTTOM - Only timestamp (below video)
-        if metadata.get('timestamp'):
-            bottom_y = config.REEL_HEIGHT - 100
-            draw.text((video_x, bottom_y), metadata['timestamp'], 
-                     fill=gray_text_color, font=metrics_font)
         
         # Convert to numpy array and create ImageClip
         overlay_array = np.array(overlay)
