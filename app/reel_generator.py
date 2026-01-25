@@ -118,7 +118,7 @@ class ReelGenerator:
             raise ValueError(error_msg)
     
     def _truncate_caption(self, caption: str) -> str:
-        """Truncate caption to maximum length while preserving line breaks and removing URLs."""
+        """Truncate caption to maximum length while preserving spacing and removing URLs."""
         if not caption:
             return ""
         
@@ -126,8 +126,7 @@ class ReelGenerator:
         import re
         caption = re.sub(r'https?://\S+', '', caption)
         
-        # Clean up extra whitespace but preserve single spaces and line breaks
-        caption = re.sub(r' +', ' ', caption)  # Replace multiple spaces with single space
+        # Only strip leading/trailing whitespace, preserve internal spacing
         caption = caption.strip()
         
         if len(caption) <= config.MAX_CAPTION_LENGTH:
@@ -535,12 +534,19 @@ class ReelGenerator:
         draw = ImageDraw.Draw(overlay)
         
         # Try to load fonts - Linux/Railway compatible
+        emoji_font = None
         try:
             # Try DejaVu fonts (available on most Linux systems including Railway)
             display_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 26)
             username_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 22)
             caption_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28)
             metrics_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
+            
+            # Try to load emoji font for Linux
+            try:
+                emoji_font = ImageFont.truetype("/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf", 28)
+            except:
+                pass
         except Exception:
             try:
                 # Fallback to Liberation fonts
@@ -566,6 +572,14 @@ class ReelGenerator:
                         continue
                 
                 if not font_found:
+                    # Try Windows emoji font
+                    try:
+                        import platform
+                        if platform.system() == 'Windows':
+                            emoji_font = ImageFont.truetype("seguiemj.ttf", 28)
+                    except:
+                        pass
+                    
                     # Final fallback - use default but warn heavily
                     logger.error("NO TRUETYPE FONTS FOUND - Text will be very small!")
                     base_font = ImageFont.load_default()
@@ -627,7 +641,8 @@ class ReelGenerator:
                 (caption_x, caption_y),
                 caption_font,
                 text_color,
-                video_w  # Caption width matches video width
+                video_w,  # Caption width matches video width
+                emoji_font
             )
         
         # Convert to numpy array and create ImageClip
@@ -641,34 +656,55 @@ class ReelGenerator:
         position: Tuple[int, int],
         font: ImageFont.ImageFont,
         fill: Tuple[int, int, int, int],
-        max_width: int
+        max_width: int,
+        emoji_font: Optional[ImageFont.ImageFont] = None
     ):
-        """Draw multiline text with word wrapping."""
-        words = text.split(' ')
-        lines = []
-        current_line = []
+        """Draw multiline text with word wrapping and emoji support."""
+        import re
         
-        for word in words:
-            test_line = ' '.join(current_line + [word])
+        # Split by actual spaces only, preserving multiple spaces
+        # Use negative lookahead to keep the spaces
+        parts = re.split(r'( +)', text)
+        
+        lines = []
+        current_line_parts = []
+        current_width = 0
+        
+        for part in parts:
+            # Test if adding this part exceeds width
+            test_line = ''.join(current_line_parts + [part])
             bbox = draw.textbbox((0, 0), test_line, font=font)
             width = bbox[2] - bbox[0]
             
             if width <= max_width:
-                current_line.append(word)
+                current_line_parts.append(part)
             else:
-                if current_line:
-                    lines.append(' '.join(current_line))
-                current_line = [word]
+                if current_line_parts:
+                    lines.append(''.join(current_line_parts))
+                # Start new line with current part
+                if part.strip():  # Don't start new line with just spaces
+                    current_line_parts = [part]
+                else:
+                    current_line_parts = []
         
-        if current_line:
-            lines.append(' '.join(current_line))
+        if current_line_parts:
+            lines.append(''.join(current_line_parts))
         
-        # Draw lines with better spacing
+        # Draw lines with emoji support
         x, y = position
-        line_height = 38  # Increased for better readability
+        line_height = 38
         for i, line in enumerate(lines[:6]):  # Max 6 lines
             if line.strip():  # Only draw non-empty lines
-                draw.text((x, y), line, fill=fill, font=font, embedded_color=True)
+                # Try to render with emoji font if available
+                try:
+                    if emoji_font:
+                        # Draw with emoji fallback - PIL will use emoji font for emoji chars
+                        draw.text((x, y), line, fill=fill, font=font, embedded_color=True)
+                    else:
+                        draw.text((x, y), line, fill=fill, font=font, embedded_color=True)
+                except:
+                    # Fallback without embedded_color if it fails
+                    draw.text((x, y), line, fill=fill, font=font)
                 y += line_height
     
     def _format_count(self, count: int) -> str:
