@@ -118,9 +118,16 @@ class ReelGenerator:
             raise ValueError(error_msg)
     
     def _truncate_caption(self, caption: str) -> str:
-        """Truncate caption to maximum length while preserving line breaks."""
+        """Truncate caption to maximum length while preserving line breaks and removing URLs."""
         if not caption:
             return ""
+        
+        # Remove URLs (https://t.co/... and other URLs)
+        import re
+        caption = re.sub(r'https?://\S+', '', caption)
+        
+        # Remove extra whitespace
+        caption = ' '.join(caption.split())
         
         if len(caption) <= config.MAX_CAPTION_LENGTH:
             return caption
@@ -511,13 +518,30 @@ class ReelGenerator:
                 caption_font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", 28)
                 metrics_font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", 20)
             except Exception:
-                # Last resort: use PIL's improved default with size
-                logger.warning("Could not load system fonts, using PIL default")
-                from PIL import ImageFont
-                display_font = ImageFont.load_default()
-                username_font = display_font
-                caption_font = display_font
-                metrics_font = display_font
+                # Last resort: Try to use any TrueType font available on system
+                logger.warning("Could not load DejaVu/Liberation fonts, searching for alternatives")
+                import glob
+                font_found = False
+                for font_path in glob.glob("/usr/share/fonts/**/*.ttf", recursive=True):
+                    try:
+                        display_font = ImageFont.truetype(font_path, 32)  # Larger sizes
+                        username_font = ImageFont.truetype(font_path, 28)
+                        caption_font = ImageFont.truetype(font_path, 34)
+                        metrics_font = ImageFont.truetype(font_path, 26)
+                        logger.info(f"Using font: {font_path}")
+                        font_found = True
+                        break
+                    except:
+                        continue
+                
+                if not font_found:
+                    # Final fallback - use default but warn heavily
+                    logger.error("NO TRUETYPE FONTS FOUND - Text will be very small!")
+                    base_font = ImageFont.load_default()
+                    display_font = base_font
+                    username_font = base_font
+                    caption_font = base_font
+                    metrics_font = base_font
         
         # Text colors for white background
         text_color = (0, 0, 0, 255)  # Black
