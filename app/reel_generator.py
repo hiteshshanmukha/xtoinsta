@@ -333,7 +333,8 @@ class ReelGenerator:
         self,
         video_path: str,
         avatar_img: Optional[Image.Image],
-        metadata: Dict
+        metadata: Dict,
+        resolution: str = "720p"
     ) -> Optional[Path]:
         """
         Create vertical video with Twitter-like overlays.
@@ -342,6 +343,7 @@ class ReelGenerator:
             video_path: Path to source video file.
             avatar_img: PIL Image of circular avatar (or None).
             metadata: Dictionary with post metadata.
+            resolution: Desired resolution (360p, 480p, 720p, 1080p).
             
         Returns:
             Path to output reel file or None if creation fails.
@@ -366,16 +368,24 @@ class ReelGenerator:
             
             # Keep original aspect ratio - resize to fit within frame with horizontal margins
             # Leave 100px margin on each side horizontally
-            # Limit to 720p for speed
             horizontal_margin = 100
             available_width = config.REEL_WIDTH - (2 * horizontal_margin)
             
-            # Downscale if larger than 720p for faster processing
+            # Map resolution to max height
+            resolution_map = {
+                "360p": 360,
+                "480p": 480,
+                "720p": 720,
+                "1080p": 1080
+            }
+            max_height = resolution_map.get(resolution, 720)
+            
+            # Downscale if larger than selected resolution
             video_w, video_h = original_w, original_h
-            if video_h > 720:
-                scale_down = 720 / video_h
+            if video_h > max_height:
+                scale_down = max_height / video_h
                 video_w = int(video_w * scale_down)
-                video_h = 720
+                video_h = max_height
             
             scale = min(available_width / video_w, config.REEL_HEIGHT / video_h)
             new_w = int(video_w * scale)
@@ -805,7 +815,7 @@ class ReelGenerator:
                 return None, {"error": "Failed to download video"}
             
             # Step 4: Create reel
-            output_path = self.create_reel(video_path, avatar_img, metadata)
+            output_path = self.create_reel(video_path, avatar_img, metadata, resolution=resolution)
             
             if output_path:
                 return output_path, metadata
