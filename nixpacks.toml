@@ -1,5 +1,5 @@
 [phases.setup]
-aptPkgs = ["fonts-dejavu-core", "fonts-liberation", "fonts-noto-color-emoji", "fontconfig"]
+aptPkgs = ["fonts-inter", "fonts-roboto", "fonts-noto", "fonts-liberation", "fonts-dejavu-core", "fonts-noto-color-emoji", "fontconfig"]
 
 [start]
 cmd = "bash start.sh"

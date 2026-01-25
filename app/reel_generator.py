@@ -549,35 +549,37 @@ class ReelGenerator:
                 logger.warning("Noto Color Emoji not available")
                 pass
             
-            # Load regular fonts
-            display_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 26)
-            username_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 22)
+            # Try to load fonts similar to Chirp (Twitter/X's UI font)
+            # Chirp is proprietary, so we use similar sans-serif alternatives
+            # Priority: Inter > Roboto > Noto Sans > Liberation > DejaVu
+            font_paths_priority = [
+                # Inter (very similar to Chirp, modern sans-serif)
+                ("/usr/share/fonts/truetype/inter/Inter-Bold.ttf", "/usr/share/fonts/truetype/inter/Inter-Regular.ttf"),
+                # Roboto (clean, widely available)
+                ("/usr/share/fonts/truetype/roboto/Roboto-Bold.ttf", "/usr/share/fonts/truetype/roboto/Roboto-Regular.ttf"),
+                # Noto Sans (Google's font, clean and modern)
+                ("/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf", "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"),
+                # Liberation (good fallback)
+                ("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"),
+                # DejaVu (last resort)
+                ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+            ]
             
-            # For caption, use a font stack approach - try fonts that might support emoji
-            caption_font_loaded = False
-            for font_path in [
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-                "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-            ]:
+            font_loaded = False
+            for bold_path, regular_path in font_paths_priority:
                 try:
-                    caption_font = ImageFont.truetype(font_path, 28)
-                    caption_font_loaded = True
-                    logger.info(f"Loaded caption font: {font_path}")
+                    display_font = ImageFont.truetype(bold_path, 26)
+                    username_font = ImageFont.truetype(regular_path, 22)
+                    caption_font = ImageFont.truetype(regular_path, 28)
+                    metrics_font = ImageFont.truetype(regular_path, 20)
+                    logger.info(f"Loaded fonts: {bold_path}, {regular_path}")
+                    font_loaded = True
                     break
                 except:
                     continue
             
-            if not caption_font_loaded:
-                caption_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28)
-                
-            metrics_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
-        except Exception:
-            try:
-                # Fallback to Liberation fonts
-                display_font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", 26)
-                username_font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", 22)
-                caption_font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", 28)
-                metrics_font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", 20)
+            if not font_loaded:
+                raise Exception("No suitable fonts found")
             except Exception:
                 # Last resort: Try to use any TrueType font available on system
                 logger.warning("Could not load DejaVu/Liberation fonts, searching for alternatives")
