@@ -261,17 +261,27 @@ class ReelGenerator:
             logger.info("=" * 60)
             return None
     
-    def download_video(self, url: str) -> Optional[str]:
+    def download_video(self, url: str, resolution: str = "720p") -> Optional[str]:
         """
-        Download video from X/Twitter post using yt-dlp.
+        Download video from X/Twitter post using yt-dlp with specified resolution.
         
         Args:
             url: X/Twitter post URL.
+            resolution: Desired resolution (360p, 480p, 720p, 1080p).
             
         Returns:
             Path to downloaded video file or None if download fails.
         """
-        logger.info(f"Downloading video from: {url}")
+        logger.info(f"Downloading video from: {url} in {resolution}")
+        
+        # Map resolution to height
+        resolution_map = {
+            "360p": "360",
+            "480p": "480",
+            "720p": "720",
+            "1080p": "1080"
+        }
+        max_height = resolution_map.get(resolution, "720")
         
         try:
             # Create temporary file for video
@@ -281,7 +291,7 @@ class ReelGenerator:
             result = subprocess.run(
                 [
                     "yt-dlp",
-                    "-f", "best[ext=mp4][height<=720]/best[ext=mp4]/best",  # Max 720p for speed
+                    "-f", f"best[ext=mp4][height<={max_height}]/best[ext=mp4]/best",  # Resolution-based
                     "-o", str(temp_video),
                     "--concurrent-fragments", "5",
                     "--retries", "2",
@@ -625,17 +635,18 @@ class ReelGenerator:
         else:
             return str(count)
     
-    def create_reel_from_url(self, url: str) -> Tuple[Optional[Path], dict]:
+    def create_reel_from_url(self, url: str, resolution: str = "720p") -> Tuple[Optional[Path], dict]:
         """
         Main orchestration method to create reel from X/Twitter URL.
         
         Args:
             url: X/Twitter post URL.
+            resolution: Desired resolution (360p, 480p, 720p, 1080p).
             
         Returns:
             Tuple of (output_path, metadata) or (None, error_message).
         """
-        logger.info(f"Starting reel creation for URL: {url}")
+        logger.info(f"Starting reel creation for URL: {url} with resolution: {resolution}")
         
         try:
             # Step 1: Extract metadata
@@ -644,8 +655,8 @@ class ReelGenerator:
             # Step 2: Prepare avatar
             avatar_img = self.prepare_avatar(metadata['avatar_url'], metadata.get('username'))
             
-            # Step 3: Download video
-            video_path = self.download_video(url)
+            # Step 3: Download video with resolution
+            video_path = self.download_video(url, resolution=resolution)
             if not video_path:
                 return None, {"error": "Failed to download video"}
             
