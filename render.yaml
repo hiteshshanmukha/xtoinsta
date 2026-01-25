@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: xtoinsta-streamlit
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run streamlit_ui/app_reel.py --server.port=$PORT --server.address=0.0.0.0
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: VIDEO_PRESET
+        value: ultrafast

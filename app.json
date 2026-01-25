@@ -1,0 +1,20 @@
+{
+  "name": "X to Instagram Reel Converter",
+  "description": "Convert X/Twitter videos to Instagram Reels with overlays",
+  "repository": "https://github.com/yourusername/xtoinsta",
+  "keywords": ["python", "video", "twitter", "instagram"],
+  "buildpacks": [
+    {
+      "url": "https://github.com/jonathanong/heroku-buildpack-ffmpeg-latest.git"
+    },
+    {
+      "url": "heroku/python"
+    }
+  ],
+  "env": {
+    "VIDEO_PRESET": {
+      "description": "FFmpeg preset for encoding speed",
+      "value": "ultrafast"
+    }
+  }
+}

@@ -1,0 +1,228 @@
+Use this as a single, self-contained Copilot Chat prompt in an empty repo/file:
+
+***
+
+**Prompt for GitHub Copilot:**
+
+I want you to build an end‑to‑end project called **“X to Instagram Reel Converter”** in Python.  
+Goal: given an X/Twitter post URL that contains a video, the system should generate a **vertical 1080x1920 MP4** (Instagram Reels format) that visually shows the **full post context**: video, user avatar, username, display name, caption, and engagement metrics.
+
+Please create all necessary files and code for a **local project** with:
+
+- Python backend (Flask)
+- Frontend (Streamlit)
+- Video pipeline (yt‑dlp + moviepy + Pillow)
+- Basic tests and documentation
+
+### 1. Overall behavior
+
+- Input: a single X URL like `https://x.com/username/status/1234567890`.
+- Backend should:
+  - Use `yt-dlp` to:
+    - Validate and fetch metadata for the post.
+    - Download the best MP4 video stream.
+  - Extract metadata:
+    - `username`
+    - `display_name`
+    - `caption` (truncate to ~150 chars, keep line breaks)
+    - `avatar_url` (if available)
+    - `likes`, `retweets` (or reposts), `comments`, `views`
+    - `timestamp` (format like `Jan 24, 2026`)
+    - Original `post_url`
+  - Download the avatar image and render it as a **circular** image with a thin white border.
+  - Create a **vertical 1080x1920** video:
+    - Use the first video frame to build a blurred background that covers the full 1080x1920.
+    - Resize the original video proportionally and center it (no distortion), leaving blurred background visible.
+    - Overlay, in this order:
+      - Circular avatar at top‑left (around 80×80 px plus border).
+      - Username `@username` in white, bold, ~32 px, to the right of avatar.
+      - Display name in light gray under the username (~24 px).
+      - Caption block somewhere in the upper middle (e.g., starting ~600 px from top), multiline, white text, max width ~900 px, truncated nicely if too long.
+      - A dark semi‑transparent rectangle at the bottom (height ~300 px, black with alpha ~180) as a footer overlay for metrics.
+      - On this footer, show:
+        - Likes `❤️  {likes}` (K‑notation not required, but nice to have).
+        - Retweets `🔄 {retweets}`.
+        - Comments `💬 {comments}`.
+        - Views line `👁️ {views} views` in gray.
+        - Timestamp on a separate line in darker gray.
+    - Preserve original **audio**.
+    - Export as MP4 with:
+      - Video codec: `libx264`
+      - Audio codec: `aac`
+      - Resolution: 1080×1920
+      - Reasonable preset (e.g., `medium`, configurable).
+  - Save final reel as `downloads/reel_<post_id>.mp4`.
+
+### 2. Project structure
+
+Create this folder layout:
+
+- `app/`
+  - `reel_generator.py`  ← core class for video + metadata
+  - `app_reel.py`        ← Flask API
+  - `__init__.py`
+- `streamlit_ui/`
+  - `app_reel.py`        ← Streamlit web UI
+  - `__init__.py`
+- `downloads/`           ← output reels (created if missing)
+- `logs/`                ← logs (created if missing)
+- `tests/`
+  - `test_reel_generator.py`
+- Root files:
+  - `requirements.txt`
+  - `config.py`
+  - `logging_config.py`
+  - `README.md`
+  - `quickstart.py`
+
+### 3. `ReelGenerator` class (`app/reel_generator.py`)
+
+Implement a class roughly like:
+
+- `__init__(self, output_dir: str = "downloads")`
+- `extract_metadata(self, url: str) -> dict`
+  - Runs `yt-dlp --dump-json --skip-download <url>` via `subprocess.run`.
+  - Parses JSON safely and returns a dict with keys: `username`, `display_name`, `caption`, `avatar_url`, `likes`, `retweets`, `comments`, `views`, `timestamp`, `post_url`.
+- `prepare_avatar(self, avatar_url: str) -> Image.Image | None`
+  - Downloads avatar using `requests`.
+  - Uses `PIL` to:
+    - Resize to ~80×80.
+    - Apply circular mask.
+    - Add white border.
+- `download_video(self, url: str) -> str | None`
+  - Uses `yt-dlp` to download best MP4 into `downloads` (e.g., `temp_video.mp4`).
+  - Returns absolute path.
+- `create_reel(self, video_path: str, avatar_img: Image.Image | None, metadata: dict) -> Path | None`
+  - Uses `moviepy` + `PIL` + `numpy` to:
+    - Load original video.
+    - Create blurred background from first frame.
+    - Resize and center original video.
+    - Add overlays (avatar, text, metrics) as described above.
+    - Compose final 1080×1920 video.
+    - Write file `reel_<post_id>.mp4` to `downloads`.
+    - Clean up temporary files.
+- `create_reel_from_url(self, url: str) -> tuple[Path | None, dict | str]`
+  - Orchestrates: extract metadata → prepare avatar → download video → create reel.
+  - Returns `(output_path, metadata)` or `(None, error_message)`.
+
+Use type hints, docstrings, and clear error handling (`try/except` with helpful log messages).
+
+### 4. Flask API (`app/app_reel.py`)
+
+Build a minimal Flask API with CORS:
+
+- `POST /api/create-reel`
+  - Body: JSON `{ "url": "<x_status_url>" }`.
+  - Validates URL exists.
+  - Calls `ReelGenerator.create_reel_from_url`.
+  - On success: returns `200` JSON:
+    ```json
+    {
+      "success": true,
+      "post_id": "1234567890",
+      "username": "user",
+      "file": "reel_1234567890.mp4",
+      "message": "Reel created",
+      "metadata": {
+        "username": "user",
+        "likes": 1234,
+        "caption": "...",
+        "file_size_mb": 12.3
+      }
+    }
+    ```
+  - On failure: returns `4xx/5xx` with `{"error": "...reason..."}`.
+- `GET /api/download-reel/<filename>`
+  - Sends the MP4 from `downloads` directory with `video/mp4` content type.
+- Root `GET /`
+  - Returns simple JSON `{ "service": "x-to-reel-converter", "status": "ok" }`.
+
+### 5. Streamlit UI (`streamlit_ui/app_reel.py`)
+
+Create a simple but clean UI:
+
+- Page config: title “📱 X to Instagram Reel Converter”, icon 📱, wide layout.
+- Main flow:
+  - Text input for X URL with placeholder.
+  - Button “🎬 Create Reel”.
+  - When clicked:
+    - Validate input.
+    - Show spinner (“Creating reel… this can take 1–3 minutes”).
+    - POST to backend `/api/create-reel` (API base URL from `API_URL` env or default `http://localhost:5000`).
+  - On success:
+    - Show success message.
+    - Metrics:
+      - Username (@…)
+      - File size (MB).
+    - Expander with:
+      - Likes, caption snippet, resolution (1080×1920).
+    - Download button:
+      - Fetches file from `/api/download-reel/<filename>` and offers `st.download_button`.
+    - Short instructions on:
+      - Uploading to Instagram Reels, TikTok, YouTube Shorts.
+  - On error:
+    - Show the error nicely.
+
+### 6. Configuration (`config.py`)
+
+Centralize constants:
+
+- Target resolution: `REEL_WIDTH = 1080`, `REEL_HEIGHT = 1920`.
+- Video codec, audio codec, preset.
+- Max caption length.
+- Default output directory.
+- Max processing timeout (e.g., 600 seconds).
+- Read overrides from environment variables where appropriate.
+
+### 7. Logging (`logging_config.py`)
+
+Set up project‑wide logging:
+
+- Rotating file handler writing to `logs/app.log` (max 10 MB, a few backups).
+- Console handler.
+- Format like: `[%(asctime)s] %(levelname)s %(name)s: %(message)s`.
+- Helper `get_logger(name: str)` function used in other modules.
+
+### 8. Requirements (`requirements.txt`)
+
+Include pinned versions (or reasonable latest):
+
+- `Flask`
+- `Flask-Cors`
+- `streamlit`
+- `moviepy`
+- `yt-dlp`
+- `Pillow`
+- `requests`
+- `numpy`
+
+(You can pick sensible recent versions.)
+
+### 9. Tests (`tests/test_reel_generator.py`)
+
+Write a small pytest suite that:
+
+- Mocks `subprocess.run` to test `extract_metadata`.
+- Mocks `requests.get` to test `prepare_avatar`.
+- Mocks video download to test failure handling.
+- Does not perform real network/video operations.
+
+### 10. README (`README.md`)
+
+Document:
+
+- What the project does.
+- High‑level architecture.
+- How to install:
+  - `pip install -r requirements.txt`
+  - `ffmpeg` requirement.
+- How to run:
+  - `python app/app_reel.py`
+  - `streamlit run streamlit_ui/app_reel.py`
+- How to use:
+  - Paste X URL → Create Reel → Download MP4 → Upload to Instagram.
+
+***
+
+Please generate all of this code and structure step‑by‑step.  
+Follow good Python style (type hints, clear names, small functions) and keep things modular so I can easily extend it later.
