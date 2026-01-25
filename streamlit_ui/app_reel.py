@@ -12,7 +12,6 @@ import config
 # Page configuration
 st.set_page_config(
     page_title="X to Instagram Reel Converter",
-    page_icon="📱",
     layout="wide"
 )
 
@@ -52,7 +51,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Header
-st.markdown('<div class="main-header">📱 X to Instagram Reel Converter</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">X to Instagram Reel Converter</div>', unsafe_allow_html=True)
 st.markdown(
     '<div class="subtitle">Transform X/Twitter videos into vertical Instagram Reels with full post context</div>',
     unsafe_allow_html=True
@@ -71,20 +70,20 @@ with col2:
     )
     
     # Resolution selector
-    st.markdown("### ⚙️ Video Quality")
+    st.markdown("### Video Quality")
     resolution = st.select_slider(
         "Select resolution (lower = faster processing)",
         options=["360p", "480p", "720p", "1080p"],
         value="720p",
         label_visibility="collapsed"
     )
-    st.caption(f"Selected: **{resolution}** {'⚡ Fast' if resolution in ['360p', '480p'] else '🎥 HD' if resolution == '720p' else '✨ Full HD'}")
+    st.caption(f"Selected: **{resolution}** {'Fast' if resolution in ['360p', '480p'] else 'HD' if resolution == '720p' else 'Full HD'}")
     
     # Create button
-    create_button = st.button("🎬 Create Reel", type="primary", use_container_width=True)
+    create_button = st.button("Create Reel", type="primary", use_container_width=True)
     
     # Instructions
-    with st.expander("ℹ️ How to use"):
+    with st.expander("How to use"):
         st.markdown("""
         1. Find an X/Twitter post with a video
         2. Copy the post URL (e.g., `https://x.com/username/status/1234567890`)
@@ -110,12 +109,12 @@ if 'filename' not in st.session_state:
 # Process reel creation
 if create_button:
     if not url_input:
-        st.error("⚠️ Please enter an X/Twitter URL")
+        st.error("Please enter an X/Twitter URL")
     elif not (url_input.startswith('https://x.com/') or url_input.startswith('https://twitter.com/')):
-        st.error("⚠️ Invalid URL format. Please enter a valid X/Twitter post URL")
+        st.error("Invalid URL format. Please enter a valid X/Twitter post URL")
     else:
         # Show loading spinner
-        with st.spinner(f"🎥 Creating your reel in {resolution}... Please wait..."):
+        with st.spinner(f"Creating your reel in {resolution}... Please wait..."):
             try:
                 # Make API request with resolution
                 response = requests.post(
@@ -141,18 +140,18 @@ if create_button:
                         st.session_state.metadata = metadata
                         st.session_state.filename = filename
                         
-                        st.success("✅ Reel created successfully!")
+                        st.success("Reel created successfully!")
                     else:
-                        st.error(f"⚠️ Failed to fetch video: {download_response.status_code}")
+                        st.error(f"Failed to fetch video: {download_response.status_code}")
                 
                 else:
                     # Error response
                     error_data = response.json()
                     error_msg = error_data.get('error', 'Unknown error occurred')
-                    st.error(f"❌ Error: {error_msg}")
+                    st.error(f"Error: {error_msg}")
                     
                     # Show troubleshooting tips
-                    with st.expander("🔧 Troubleshooting"):
+                    with st.expander("Troubleshooting"):
                         st.markdown("""
                         **Common issues:**
                         - Make sure the X/Twitter post is public
@@ -168,14 +167,14 @@ if create_button:
                         """)
             
             except requests.Timeout:
-                st.error("⏱️ Request timed out. The video might be too long or the server is busy. Please try again.")
+                st.error("Request timed out. The video might be too long or the server is busy. Please try again.")
             
             except requests.ConnectionError:
-                st.error("🔌 Cannot connect to the API. Make sure the Flask backend is running on " + API_URL)
+                st.error("Cannot connect to the API. Make sure the Flask backend is running on " + API_URL)
                 st.info("Start the backend with: `python app/app_reel.py`")
             
             except Exception as e:
-                st.error(f"❌ Unexpected error: {str(e)}")
+                st.error(f"Unexpected error: {str(e)}")
                 st.info("Check the logs for more details or try again.")
 
 # Display video preview and download if available in session state
@@ -184,12 +183,12 @@ if st.session_state.video_data:
     
     with col2:
         # Video preview
-        st.markdown("### 🎬 Video Preview")
+        st.markdown("### Video Preview")
         st.video(st.session_state.video_data)
         
         # Metadata display
         metadata = st.session_state.metadata
-        st.markdown("### 📊 Reel Information")
+        st.markdown("### Reel Information")
         
         metric_cols = st.columns(4)
         with metric_cols[0]:
@@ -203,7 +202,7 @@ if st.session_state.video_data:
             st.metric("Format", "MP4")
         
         # Detailed metadata
-        with st.expander("📝 Post Details"):
+        with st.expander("Post Details"):
             if metadata.get('display_name'):
                 st.markdown(f"**Display Name:** {metadata.get('display_name', 'N/A')}")
             if metadata.get('caption'):
@@ -213,9 +212,9 @@ if st.session_state.video_data:
                 st.markdown(f"**Posted:** {metadata.get('timestamp', 'N/A')}")
         
         # Persistent download button
-        st.markdown("### 📥 Download Your Reel")
+        st.markdown("### Download Your Reel")
         st.download_button(
-            label="⬇️ Download MP4",
+            label="Download MP4",
             data=st.session_state.video_data,
             file_name=st.session_state.filename,
             mime="video/mp4",
@@ -224,14 +223,14 @@ if st.session_state.video_data:
         )
         
         # Clear button
-        if st.button("🗑️ Create New Reel", use_container_width=True):
+        if st.button("Create New Reel", use_container_width=True):
             st.session_state.video_data = None
             st.session_state.metadata = None
             st.session_state.filename = None
             st.rerun()
         
         # Upload instructions
-        st.markdown("### 📱 Upload to Social Media")
+        st.markdown("### Upload to Social Media")
         upload_cols = st.columns(3)
         
         with upload_cols[0]:
@@ -262,7 +261,7 @@ if st.session_state.video_data:
 # Footer
 st.markdown("---")
 st.markdown(
-    '<div style="text-align: center; color: #657786;">Made with ❤️ for content creators | '
+    '<div style="text-align: center; color: #657786;">Made for content creators | '
     'Respect copyright and X/Twitter Terms of Service</div>',
     unsafe_allow_html=True
 )
