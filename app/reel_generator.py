@@ -6,11 +6,13 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Tuple
+import io
+import urllib.request
 
 import numpy as np
 import requests
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
-from pilmoji import Pilmoji
+import emoji
 
 # MoviePy 2.x imports
 try:
@@ -645,9 +647,8 @@ class ReelGenerator:
             logger.warning("No avatar image available - skipping avatar in overlay")
         
         # Display name (bold) - with emoji support
-        with Pilmoji(overlay) as pilmoji:
-            pilmoji.text((text_x, avatar_y + 5), metadata['display_name'], 
-                        fill=text_color, font=display_font)
+        self._draw_text_with_emoji_images(overlay, metadata['display_name'], (text_x, avatar_y + 5), 
+                                          display_font, text_color)
         
         # Username below display name (gray)
         username_text = f"@{metadata['username']}"
@@ -658,7 +659,7 @@ class ReelGenerator:
         caption_text = metadata.get('caption', '')
         if caption_text:
             # Multi-line caption support with emoji
-            self._draw_multiline_text_pilmoji(
+            self._draw_multiline_text_with_emoji_images(
                 overlay,
                 caption_text,
                 (caption_x, caption_y),
@@ -671,7 +672,55 @@ class ReelGenerator:
         overlay_array = np.array(overlay)
         return ImageClip(overlay_array, duration=duration)
     
-    def _draw_multiline_text_pilmoji(
+    def _get_emoji_image(self, emoji_char: str, size: int = 28) -> Optional[Image.Image]:
+        """Download emoji image from Twemoji CDN."""
+        try:
+            # Get Unicode codepoint
+            codepoint = hex(ord(emoji_char))[2:].lower()
+            # Twemoji CDN URL
+            url = f"https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/72x72/{codepoint}.png"
+            
+            with urllib.request.urlopen(url, timeout=5) as response:
+                emoji_img = Image.open(io.BytesIO(response.read()))
+                emoji_img = emoji_img.resize((size, size), Image.Resampling.LANCZOS)
+                return emoji_img
+        except Exception as e:
+            logger.warning(f"Failed to download emoji {emoji_char}: {e}")
+            return None
+    
+    def _draw_text_with_emoji_images(
+        self,
+        image: Image.Image,
+        text: str,
+        position: Tuple[int, int],
+        font: ImageFont.ImageFont,
+        fill: Tuple[int, int, int, int]
+    ):
+        """Draw text with emoji replaced by images."""
+        draw = ImageDraw.Draw(image)
+        x, y = position
+        current_x = x
+        
+        # Process each character
+        for char in text:
+            if emoji.is_emoji(char):
+                # It's an emoji - try to get image
+                emoji_img = self._get_emoji_image(char, size=26)
+                if emoji_img:
+                    image.paste(emoji_img, (current_x, y), emoji_img if emoji_img.mode == 'RGBA' else None)
+                    current_x += 26
+                else:
+                    # Fallback to text if image fails
+                    draw.text((current_x, y), char, fill=fill, font=font)
+                    bbox = draw.textbbox((0, 0), char, font=font)
+                    current_x += bbox[2] - bbox[0]
+            else:
+                # Regular character
+                draw.text((current_x, y), char, fill=fill, font=font)
+                bbox = draw.textbbox((0, 0), char, font=font)
+                current_x += bbox[2] - bbox[0]
+    
+    def _draw_multiline_text_with_emoji_images(
         self,
         image: Image.Image,
         text: str,
@@ -680,7 +729,7 @@ class ReelGenerator:
         fill: Tuple[int, int, int, int],
         max_width: int
     ):
-        """Draw multiline text with emoji support using Pilmoji."""
+        """Draw multiline text with emoji replaced by images."""
         import re
         
         # Create a temporary draw object to measure text
@@ -712,15 +761,14 @@ class ReelGenerator:
         if current_line_parts:
             lines.append(''.join(current_line_parts))
         
-        # Draw lines with Pilmoji for emoji support
+        # Draw lines with emoji images
         x, y = position
         line_height = 38
         
-        with Pilmoji(image) as pilmoji:
-            for i, line in enumerate(lines[:6]):  # Max 6 lines
-                if line.strip():  # Only draw non-empty lines
-                    pilmoji.text((x, y), line, fill=fill, font=font)
-                    y += line_height
+        for i, line in enumerate(lines[:6]):  # Max 6 lines
+            if line.strip():  # Only draw non-empty lines
+                self._draw_text_with_emoji_images(image, line, (x, y), font, fill)
+                y += line_height
     
     def _format_count(self, count: int) -> str:
         """Format count with K notation for thousands."""
