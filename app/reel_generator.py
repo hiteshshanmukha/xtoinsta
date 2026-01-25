@@ -10,6 +10,7 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 import requests
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from pilmoji import Pilmoji
 
 # MoviePy 2.x imports
 try:
@@ -643,9 +644,10 @@ class ReelGenerator:
             text_x = avatar_x
             logger.warning("No avatar image available - skipping avatar in overlay")
         
-        # Display name (bold)
-        draw.text((text_x, avatar_y + 5), metadata['display_name'], 
-                 fill=text_color, font=display_font)
+        # Display name (bold) - with emoji support
+        with Pilmoji(overlay) as pilmoji:
+            pilmoji.text((text_x, avatar_y + 5), metadata['display_name'], 
+                        fill=text_color, font=display_font)
         
         # Username below display name (gray)
         username_text = f"@{metadata['username']}"
@@ -655,46 +657,45 @@ class ReelGenerator:
         # Caption - positioned just above video, spanning video width
         caption_text = metadata.get('caption', '')
         if caption_text:
-            # Multi-line caption support
-            self._draw_multiline_text(
-                draw,
+            # Multi-line caption support with emoji
+            self._draw_multiline_text_pilmoji(
+                overlay,
                 caption_text,
                 (caption_x, caption_y),
                 caption_font,
                 text_color,
-                video_w,  # Caption width matches video width
-                emoji_font
+                video_w  # Caption width matches video width
             )
         
         # Convert to numpy array and create ImageClip
         overlay_array = np.array(overlay)
         return ImageClip(overlay_array, duration=duration)
     
-    def _draw_multiline_text(
+    def _draw_multiline_text_pilmoji(
         self,
-        draw: ImageDraw.ImageDraw,
+        image: Image.Image,
         text: str,
         position: Tuple[int, int],
         font: ImageFont.ImageFont,
         fill: Tuple[int, int, int, int],
-        max_width: int,
-        emoji_font: Optional[ImageFont.ImageFont] = None
+        max_width: int
     ):
-        """Draw multiline text with word wrapping and emoji support."""
+        """Draw multiline text with emoji support using Pilmoji."""
         import re
         
+        # Create a temporary draw object to measure text
+        temp_draw = ImageDraw.Draw(image)
+        
         # Split by actual spaces only, preserving multiple spaces
-        # Use negative lookahead to keep the spaces
         parts = re.split(r'( +)', text)
         
         lines = []
         current_line_parts = []
-        current_width = 0
         
         for part in parts:
             # Test if adding this part exceeds width
             test_line = ''.join(current_line_parts + [part])
-            bbox = draw.textbbox((0, 0), test_line, font=font)
+            bbox = temp_draw.textbbox((0, 0), test_line, font=font)
             width = bbox[2] - bbox[0]
             
             if width <= max_width:
@@ -711,52 +712,15 @@ class ReelGenerator:
         if current_line_parts:
             lines.append(''.join(current_line_parts))
         
-        # Draw lines with emoji support
+        # Draw lines with Pilmoji for emoji support
         x, y = position
         line_height = 38
         
-        # Emoji pattern
-        emoji_pattern = re.compile(
-            "["
-            "\U0001F600-\U0001F64F"  # emoticons
-            "\U0001F300-\U0001F5FF"  # symbols & pictographs
-            "\U0001F680-\U0001F6FF"  # transport & map symbols
-            "\U0001F1E0-\U0001F1FF"  # flags (iOS)
-            "\U00002702-\U000027B0"
-            "\U000024C2-\U0001F251"
-            "\U0001F900-\U0001F9FF"  # Supplemental Symbols and Pictographs
-            "\U0001FA70-\U0001FAFF"  # Symbols and Pictographs Extended-A
-            "\u2600-\u26FF"          # Miscellaneous Symbols
-            "\u2700-\u27BF"          # Dingbats
-            "]+", flags=re.UNICODE)
-        
-        for i, line in enumerate(lines[:6]):  # Max 6 lines
-            if line.strip():  # Only draw non-empty lines
-                if emoji_font:
-                    # Draw character by character, switching fonts for emojis
-                    current_x = x
-                    for char in line:
-                        is_emoji = emoji_pattern.match(char)
-                        char_font = emoji_font if is_emoji else font
-                        
-                        try:
-                            draw.text((current_x, y), char, fill=fill, font=char_font, embedded_color=True)
-                        except:
-                            # Fallback without embedded_color
-                            draw.text((current_x, y), char, fill=fill, font=char_font)
-                        
-                        # Get character width to advance x position
-                        bbox = draw.textbbox((0, 0), char, font=char_font)
-                        char_width = bbox[2] - bbox[0]
-                        current_x += char_width
-                else:
-                    # No emoji font, draw normally
-                    try:
-                        draw.text((x, y), line, fill=fill, font=font, embedded_color=True)
-                    except:
-                        draw.text((x, y), line, fill=fill, font=font)
-                
-                y += line_height
+        with Pilmoji(image) as pilmoji:
+            for i, line in enumerate(lines[:6]):  # Max 6 lines
+                if line.strip():  # Only draw non-empty lines
+                    pilmoji.text((x, y), line, fill=fill, font=font)
+                    y += line_height
     
     def _format_count(self, count: int) -> str:
         """Format count with K notation for thousands."""
