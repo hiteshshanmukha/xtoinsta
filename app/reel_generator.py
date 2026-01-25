@@ -377,16 +377,34 @@ class ReelGenerator:
             post_id = metadata.get('post_id', 'unknown')
             output_path = self.output_dir / f"reel_{post_id}.mp4"
             
-            # Export video
+            # Export video with better error handling
             logger.info(f"Exporting video to: {output_path}")
-            final.write_videofile(
-                str(output_path),
-                codec=config.VIDEO_CODEC,
-                audio_codec=config.AUDIO_CODEC,
-                preset=config.VIDEO_PRESET,
-                fps=config.VIDEO_FPS,
-                logger=None  # Suppress moviepy logger
-            )
+            try:
+                final.write_videofile(
+                    str(output_path),
+                    codec=config.VIDEO_CODEC,
+                    audio_codec=config.AUDIO_CODEC,
+                    preset=config.VIDEO_PRESET,
+                    fps=config.VIDEO_FPS,
+                    threads=4,
+                    ffmpeg_params=['-max_muxing_queue_size', '9999'],
+                    logger=None,  # Suppress moviepy logger
+                    temp_audiofile=str(self.output_dir / f"temp_audio_{post_id}.m4a"),
+                    remove_temp=True
+                )
+            except BrokenPipeError:
+                logger.warning("BrokenPipeError encountered, retrying without audio...")
+                # Retry without audio as fallback
+                final_no_audio = final.without_audio()
+                final_no_audio.write_videofile(
+                    str(output_path),
+                    codec=config.VIDEO_CODEC,
+                    preset=config.VIDEO_PRESET,
+                    fps=config.VIDEO_FPS,
+                    threads=4,
+                    ffmpeg_params=['-max_muxing_queue_size', '9999'],
+                    logger=None
+                )
             
             logger.info(f"Video created successfully: {output_path}")
             return output_path

@@ -17,7 +17,7 @@ REEL_WIDTH = 1080
 REEL_HEIGHT = 1920
 VIDEO_CODEC = "libx264"
 AUDIO_CODEC = "aac"
-VIDEO_PRESET = os.getenv("VIDEO_PRESET", "ultrafast")  # Changed from "medium" to "ultrafast" for speed
+VIDEO_PRESET = os.getenv("VIDEO_PRESET", "veryfast")  # Changed to "veryfast" for better Railway compatibility
 VIDEO_FPS = 24  # Reduced from 30 to 24 for faster processing
 
 # Text overlay settings
