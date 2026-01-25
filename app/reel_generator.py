@@ -277,12 +277,14 @@ class ReelGenerator:
             # Create temporary file for video
             temp_video = self.output_dir / f"temp_video_{datetime.now().timestamp()}.mp4"
             
-            # Download using yt-dlp
+            # Download using yt-dlp with optimized settings
             result = subprocess.run(
                 [
                     "yt-dlp",
-                    "-f", config.YTDLP_FORMAT,
+                    "-f", "best[ext=mp4][height<=720]/best[ext=mp4]/best",  # Max 720p for speed
                     "-o", str(temp_video),
+                    "--concurrent-fragments", "5",
+                    "--retries", "2",
                     url
                 ],
                 capture_output=True,
@@ -344,12 +346,20 @@ class ReelGenerator:
             
             # Keep original aspect ratio - resize to fit within frame with horizontal margins
             # Leave 100px margin on each side horizontally
+            # Limit to 720p for speed
             horizontal_margin = 100
             available_width = config.REEL_WIDTH - (2 * horizontal_margin)
             
-            scale = min(available_width / original_w, config.REEL_HEIGHT / original_h)
-            new_w = int(original_w * scale)
-            new_h = int(original_h * scale)
+            # Downscale if larger than 720p for faster processing
+            video_w, video_h = original_w, original_h
+            if video_h > 720:
+                scale_down = 720 / video_h
+                video_w = int(video_w * scale_down)
+                video_h = 720
+            
+            scale = min(available_width / video_w, config.REEL_HEIGHT / video_h)
+            new_w = int(video_w * scale)
+            new_h = int(video_h * scale)
             
             # Calculate video position (centered)
             video_x = (config.REEL_WIDTH - new_w) // 2
@@ -377,43 +387,58 @@ class ReelGenerator:
             post_id = metadata.get('post_id', 'unknown')
             output_path = self.output_dir / f"reel_{post_id}.mp4"
             
-            # Export video with optimized settings for speed
+            # Export video with maximum speed optimization
             logger.info(f"Exporting video to: {output_path}")
             try:
                 final.write_videofile(
                     str(output_path),
-                    codec=config.VIDEO_CODEC,
-                    audio_codec=config.AUDIO_CODEC,
-                    preset='ultrafast',  # Fastest encoding
-                    fps=config.VIDEO_FPS,
-                    threads=6,  # More threads for faster processing
-                    bitrate='2000k',  # Lower bitrate for faster encoding
+                    codec='libx264',
+                    audio_codec='aac',
+                    preset='ultrafast',
+                    fps=24,
+                    threads=8,  # Max threads
+                    bitrate='1500k',  # Lower bitrate for speed
+                    audio_bitrate='128k',  # Lower audio bitrate
                     ffmpeg_params=[
-                        '-max_muxing_queue_size', '9999',
-                        '-movflags', '+faststart',  # Optimize for web streaming
-                        '-crf', '28'  # Lower quality for faster encoding
+                        '-tune', 'fastdecode',  # Optimize for fast decoding
+                        '-profile:v', 'baseline',  # Fastest profile
+                        '-level', '3.0',
+                        '-crf', '30',  # Higher CRF = faster encoding
+                        '-maxrate', '1500k',
+                        '-bufsize', '3000k',
+                        '-movflags', '+faststart',
+                        '-max_muxing_queue_size', '4096',
+                        '-g', '48',  # GOP size
+                        '-sc_threshold', '0',  # Disable scene detection
                     ],
-                    logger=None,  # Suppress moviepy logger
+                    logger=None,
+                    verbose=False,
                     temp_audiofile=str(self.output_dir / f"temp_audio_{post_id}.m4a"),
-                    remove_temp=True
+                    remove_temp=True,
+                    write_logfile=False
                 )
-            except (BrokenPipeError, IOError) as e:
+            except (BrokenPipeError, IOError, OSError) as e:
                 logger.warning(f"Error during video export: {e}, retrying without audio...")
-                # Retry without audio as fallback
                 final_no_audio = final.without_audio()
                 final_no_audio.write_videofile(
                     str(output_path),
-                    codec=config.VIDEO_CODEC,
+                    codec='libx264',
                     preset='ultrafast',
-                    fps=config.VIDEO_FPS,
-                    threads=6,
-                    bitrate='2000k',
+                    fps=24,
+                    threads=8,
+                    bitrate='1500k',
                     ffmpeg_params=[
-                        '-max_muxing_queue_size', '9999',
+                        '-tune', 'fastdecode',
+                        '-profile:v', 'baseline',
+                        '-crf', '30',
                         '-movflags', '+faststart',
-                        '-crf', '28'
+                        '-max_muxing_queue_size', '4096',
+                        '-g', '48',
+                        '-sc_threshold', '0',
                     ],
-                    logger=None
+                    logger=None,
+                    verbose=False,
+                    write_logfile=False
                 )
             
             logger.info(f"Video created successfully: {output_path}")
