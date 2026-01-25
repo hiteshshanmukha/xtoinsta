@@ -490,18 +490,28 @@ class ReelGenerator:
         overlay = Image.new('RGBA', (config.REEL_WIDTH, config.REEL_HEIGHT), (0, 0, 0, 0))
         draw = ImageDraw.Draw(overlay)
         
-        # Try to load fonts
+        # Try to load fonts - Linux/Railway compatible
         try:
-            display_font = ImageFont.truetype("arialbd.ttf", 26)  # Bold for display name
-            username_font = ImageFont.truetype("arial.ttf", 22)  # Regular for @username
-            caption_font = ImageFont.truetype("arial.ttf", 28)  # Larger for better visibility
-            metrics_font = ImageFont.truetype("arial.ttf", 20)
+            # Try DejaVu fonts (available on most Linux systems including Railway)
+            display_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 26)
+            username_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 22)
+            caption_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28)
+            metrics_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
         except Exception:
-            logger.warning("Could not load TrueType fonts, using default")
-            username_font = ImageFont.load_default()
-            display_font = username_font
-            caption_font = username_font
-            metrics_font = username_font
+            try:
+                # Fallback to Liberation fonts
+                display_font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", 26)
+                username_font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", 22)
+                caption_font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", 28)
+                metrics_font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", 20)
+            except Exception:
+                # Last resort: use PIL's improved default with size
+                logger.warning("Could not load system fonts, using PIL default")
+                from PIL import ImageFont
+                display_font = ImageFont.load_default()
+                username_font = display_font
+                caption_font = display_font
+                metrics_font = display_font
         
         # Text colors for white background
         text_color = (0, 0, 0, 255)  # Black
