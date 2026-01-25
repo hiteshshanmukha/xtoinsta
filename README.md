@@ -2,34 +2,6 @@
 
 Convert X/Twitter videos into vertical Instagram Reels with custom overlays.
 
-## Deploy to Railway
-
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new)
-
-### Quick Deploy Steps:
-
-1. **Push to GitHub:**
-   ```bash
-   cd F:\xtoinsta
-   git init
-   git add .
-   git commit -m "Initial commit"
-   git remote add origin YOUR_GITHUB_REPO_URL
-   git push -u origin main
-   ```
-
-2. **Deploy on Railway:**
-   - Go to [railway.app](https://railway.app)
-   - Sign in with GitHub
-   - Click "New Project" and select "Deploy from GitHub repo"
-   - Select your `xtoinsta` repository
-   - Railway will auto-detect Python and handle the deployment
-   - FFmpeg gets installed automatically
-
-3. **Access Your App:**
-   - Railway provides a public URL (something like `https://xtoinsta-production.up.railway.app`)
-   - Open it on any device - phone, tablet, or computer
-
 ## What It Does
 
 - Downloads videos from X/Twitter posts
