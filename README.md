@@ -1,8 +1,8 @@
-# 📱 X to Instagram Reel Converter
+# X to Instagram Reel Converter
 
-Convert X/Twitter videos to Instagram Reels with beautiful overlays including avatar, username, caption, and timestamp.
+Convert X/Twitter videos into vertical Instagram Reels with custom overlays.
 
-## 🚀 Deploy to Railway (Recommended)
+## Deploy to Railway
 
 [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new)
 
@@ -21,27 +21,25 @@ Convert X/Twitter videos to Instagram Reels with beautiful overlays including av
 2. **Deploy on Railway:**
    - Go to [railway.app](https://railway.app)
    - Sign in with GitHub
-   - Click "New Project" → "Deploy from GitHub repo"
+   - Click "New Project" and select "Deploy from GitHub repo"
    - Select your `xtoinsta` repository
-   - Railway auto-detects Python and deploys!
-   - FFmpeg is automatically included ✅
+   - Railway will auto-detect Python and handle the deployment
+   - FFmpeg gets installed automatically
 
 3. **Access Your App:**
-   - Railway generates a public URL (e.g., `https://xtoinsta-production.up.railway.app`)
-   - Click the URL to open your app
-   - Access from ANY device - mobile, tablet, desktop!
+   - Railway provides a public URL (something like `https://xtoinsta-production.up.railway.app`)
+   - Open it on any device - phone, tablet, or computer
 
-## Features
+## What It Does
 
-- 🎥 Downloads video from X/Twitter posts
-- 🖼️ Creates vertical 1080x1920 MP4 optimized for Instagram Reels
-- 👤 Includes circular avatar
-- 📝 Displays username, display name, and caption above video
-- ⏰ Shows timestamp
-- 🎨 White background with centered video
-- 🔊 Preserves original audio
-- 🌐 Web UI with Streamlit
-- ⚡ Ultra-fast processing (optimized encoding)
+- Downloads videos from X/Twitter posts
+- Converts them to vertical 1080x1920 MP4 format
+- Adds circular avatar above the video
+- Shows username, display name, and caption
+- Uses white background with the video centered
+- Keeps original audio intact
+- Provides a simple web interface
+- Fast processing with optimized encoding
 
 ## Architecture
 
@@ -128,7 +126,7 @@ sudo apt install ffmpeg
    - Paste an X/Twitter post URL (e.g., `https://x.com/username/status/1234567890`)
    - Click "🎬 Create Reel"
    - Wait 1-3 minutes for processing
-   - Download your MP4 file
+   - Downloaour MP4 file
 
 ### Option 2: API Only
 
@@ -160,9 +158,9 @@ output_path, metadata = generator.create_reel_from_url(
 )
 
 if output_path:
-    print(f"✅ Reel created: {output_path}")
+    print(f"Reel created: {output_path}")
 else:
-    print(f"❌ Error: {metadata}")
+    print(f"Error: {metadata}")
 ```
 
 ## Project Structure
@@ -231,34 +229,24 @@ Run tests:
 pytest tests/ -v
 ```
 
-## Troubleshooting
+## Common Issues
 
-### "FFmpeg not found"
-- Ensure FFmpeg is installed and in your PATH
-- Test: `ffmpeg -version`
+**FFmpeg not found**
+Make sure FFmpeg is installed and accessible. Run `ffmpeg -version` to check.
 
-### "Failed to download video"
-- Check if the X/Twitter URL is valid and public
-- Ensure the post contains a video
-- Try updating yt-dlp: `pip install -U yt-dlp`
+**Download fails**
+The X/Twitter URL needs to be valid and public. Also make sure the post actually has a video. You can try updating yt-dlp with `pip install -U yt-dlp`.
 
-### "Memory error" or slow processing
-- Lower the video preset in config.py (use "ultrafast")
-- Close other applications
-- Process shorter videos
+**Slow processing or memory errors**
+Change the video preset to "ultrafast" in config.py. Also helps to close other apps and stick to shorter videos.
 
-### API connection errors
-- Ensure Flask backend is running before starting Streamlit
-- Check the API_URL in Streamlit matches Flask host/port
+**API won't connect**
+Start the Flask backend before Streamlit. Double-check that the API_URL matches where Flask is actually running.
 
 ## License
 
-This project is for educational purposes. Respect X/Twitter's Terms of Service and copyright when downloading content.
+Educational use only. Please respect X/Twitter's Terms of Service and copyright laws.
 
 ## Contributing
 
-Feel free to fork, improve, and submit pull requests!
-
----
-
-**Made with ❤️ for content creators**
+Fork it, make it better, send a pull request.
