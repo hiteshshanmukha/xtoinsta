@@ -388,6 +388,10 @@ class ReelGenerator:
             logger.info(f"Video will be positioned at ({video_x}, {video_y}) with size {new_w}x{new_h}")
             
             resized_video = video_clip.resized((new_w, new_h))
+            
+            # Apply rounded corners to video
+            resized_video = self._apply_rounded_corners(resized_video, radius=20)
+            
             resized_video = resized_video.with_position((video_x, video_y))
             
             # Create overlay with text and avatar - pass video position info
@@ -475,35 +479,42 @@ class ReelGenerator:
             except Exception as e:
                 logger.warning(f"Failed to delete temp video: {e}")
     
-    def _add_rounded_corners(self, clip, radius=20):
-        """Add rounded corners to a video clip."""
-        def make_frame_with_mask(get_frame, t):
-            """Apply rounded corner mask to each frame."""
-            frame = get_frame(t)
+    def _apply_rounded_corners(self, clip, radius=20):
+        """Add rounded corners to a video clip (moviepy 2.x compatible)."""
+        
+        def apply_mask_to_frame(frame):
+            """Apply rounded corner mask to a single frame."""
             h, w = frame.shape[:2]
             
             # Create rounded rectangle mask
             mask = Image.new('L', (w, h), 0)
             draw = ImageDraw.Draw(mask)
-            draw.rounded_rectangle([(0, 0), (w, h)], radius=radius, fill=255)
+            draw.rounded_rectangle([(0, 0), (w-1, h-1)], radius=radius, fill=255)
             
             # Convert mask to numpy array
             mask_array = np.array(mask) / 255.0
             
             # Apply mask to frame (add alpha channel)
             if len(frame.shape) == 2:  # Grayscale
-                frame_rgba = np.dstack([frame, frame, frame, mask_array * 255])
+                frame_rgba = np.dstack([frame, frame, frame, (mask_array * 255).astype(np.uint8)])
             elif frame.shape[2] == 3:  # RGB
-                frame_rgba = np.dstack([frame, mask_array * 255])
+                frame_rgba = np.dstack([frame, (mask_array * 255).astype(np.uint8)])
             else:  # Already has alpha
                 frame_rgba = frame.copy()
                 frame_rgba[:, :, 3] = (frame_rgba[:, :, 3] / 255.0 * mask_array * 255).astype(np.uint8)
             
-            return frame_rgba.astype(np.uint8)
+            return frame_rgba
         
-        # Apply mask to video - use fl method
-        masked_clip = clip.fl(lambda gf, t: make_frame_with_mask(gf, t))
-        return masked_clip
+        # Apply mask to each frame using image_transform
+        try:
+            from moviepy import ImageClip
+            # Use fl_image for frame-by-frame transformation
+            masked_clip = clip.image_transform(apply_mask_to_frame)
+            return masked_clip
+        except:
+            # Fallback: return original clip if transformation fails
+            logger.warning("Could not apply rounded corners, using original video")
+            return clip
     
     def _create_blurred_background(self, frame: np.ndarray) -> np.ndarray:
         """Create blurred background from video frame."""
