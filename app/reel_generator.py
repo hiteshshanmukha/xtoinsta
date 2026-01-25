@@ -580,24 +580,25 @@ class ReelGenerator:
             
             if not font_loaded:
                 raise Exception("No suitable fonts found")
-            except Exception:
-                # Last resort: Try to use any TrueType font available on system
-                logger.warning("Could not load DejaVu/Liberation fonts, searching for alternatives")
-                import glob
-                font_found = False
-                for font_path in glob.glob("/usr/share/fonts/**/*.ttf", recursive=True):
-                    try:
-                        display_font = ImageFont.truetype(font_path, 32)  # Larger sizes
-                        username_font = ImageFont.truetype(font_path, 28)
-                        caption_font = ImageFont.truetype(font_path, 34)
-                        metrics_font = ImageFont.truetype(font_path, 26)
-                        logger.info(f"Using font: {font_path}")
-                        font_found = True
-                        break
-                    except:
-                        continue
                 
-                if not font_found:
+        except Exception:
+            # Last resort: Try to use any TrueType font available on system
+            logger.warning("Could not load preferred fonts, searching for alternatives")
+            import glob
+            font_found = False
+            for font_path in glob.glob("/usr/share/fonts/**/*.ttf", recursive=True):
+                try:
+                    display_font = ImageFont.truetype(font_path, 32)  # Larger sizes
+                    username_font = ImageFont.truetype(font_path, 28)
+                    caption_font = ImageFont.truetype(font_path, 34)
+                    metrics_font = ImageFont.truetype(font_path, 26)
+                    logger.info(f"Using font: {font_path}")
+                    font_found = True
+                    break
+                except:
+                    continue
+            
+            if not font_found:
                     # Try Windows emoji font
                     try:
                         import platform
