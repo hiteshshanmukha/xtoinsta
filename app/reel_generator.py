@@ -385,10 +385,6 @@ class ReelGenerator:
             logger.info(f"Video will be positioned at ({video_x}, {video_y}) with size {new_w}x{new_h}")
             
             resized_video = video_clip.resized((new_w, new_h))
-            
-            # Add rounded corners to video
-            resized_video = self._add_rounded_corners(resized_video, radius=20)
-            
             resized_video = resized_video.with_position((video_x, video_y))
             
             # Create overlay with text and avatar - pass video position info
