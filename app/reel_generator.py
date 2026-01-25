@@ -478,8 +478,6 @@ class ReelGenerator:
     
     def _add_rounded_corners(self, clip, radius=20):
         """Add rounded corners to a video clip."""
-        from moviepy.video.fx.all import mask_color
-        
         def make_frame_with_mask(get_frame, t):
             """Apply rounded corner mask to each frame."""
             frame = get_frame(t)
@@ -493,15 +491,18 @@ class ReelGenerator:
             # Convert mask to numpy array
             mask_array = np.array(mask) / 255.0
             
-            # Apply mask to frame
-            if len(frame.shape) == 3:
-                mask_array = mask_array[:, :, np.newaxis]
-                frame = (frame * mask_array).astype(np.uint8)
+            # Apply mask to frame (add alpha channel)
+            if len(frame.shape) == 2:  # Grayscale
+                frame_rgba = np.dstack([frame, frame, frame, mask_array * 255])
+            elif frame.shape[2] == 3:  # RGB
+                frame_rgba = np.dstack([frame, mask_array * 255])
+            else:  # Already has alpha
+                frame_rgba = frame.copy()
+                frame_rgba[:, :, 3] = (frame_rgba[:, :, 3] / 255.0 * mask_array * 255).astype(np.uint8)
             
-            return frame
+            return frame_rgba.astype(np.uint8)
         
-        # Apply mask to video
-        from moviepy.video.VideoClip import VideoClip
+        # Apply mask to video - use fl method
         masked_clip = clip.fl(lambda gf, t: make_frame_with_mask(gf, t))
         return masked_clip
     
