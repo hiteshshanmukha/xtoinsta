@@ -535,18 +535,39 @@ class ReelGenerator:
         
         # Try to load fonts - Linux/Railway compatible
         emoji_font = None
+        caption_font = None
+        
         try:
-            # Try DejaVu fonts (available on most Linux systems including Railway)
-            display_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 26)
-            username_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 22)
-            caption_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28)
-            metrics_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
-            
-            # Try to load emoji font for Linux
+            # Try to load Noto Color Emoji first for captions (supports emoji)
             try:
                 emoji_font = ImageFont.truetype("/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf", 28)
+                logger.info("Loaded Noto Color Emoji font for emojis")
             except:
+                logger.warning("Noto Color Emoji not available")
                 pass
+            
+            # Load regular fonts
+            display_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 26)
+            username_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 22)
+            
+            # For caption, use a font stack approach - try fonts that might support emoji
+            caption_font_loaded = False
+            for font_path in [
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            ]:
+                try:
+                    caption_font = ImageFont.truetype(font_path, 28)
+                    caption_font_loaded = True
+                    logger.info(f"Loaded caption font: {font_path}")
+                    break
+                except:
+                    continue
+            
+            if not caption_font_loaded:
+                caption_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28)
+                
+            metrics_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
         except Exception:
             try:
                 # Fallback to Liberation fonts
@@ -693,18 +714,48 @@ class ReelGenerator:
         # Draw lines with emoji support
         x, y = position
         line_height = 38
+        
+        # Emoji pattern
+        emoji_pattern = re.compile(
+            "["
+            "\U0001F600-\U0001F64F"  # emoticons
+            "\U0001F300-\U0001F5FF"  # symbols & pictographs
+            "\U0001F680-\U0001F6FF"  # transport & map symbols
+            "\U0001F1E0-\U0001F1FF"  # flags (iOS)
+            "\U00002702-\U000027B0"
+            "\U000024C2-\U0001F251"
+            "\U0001F900-\U0001F9FF"  # Supplemental Symbols and Pictographs
+            "\U0001FA70-\U0001FAFF"  # Symbols and Pictographs Extended-A
+            "\u2600-\u26FF"          # Miscellaneous Symbols
+            "\u2700-\u27BF"          # Dingbats
+            "]+", flags=re.UNICODE)
+        
         for i, line in enumerate(lines[:6]):  # Max 6 lines
             if line.strip():  # Only draw non-empty lines
-                # Try to render with emoji font if available
-                try:
-                    if emoji_font:
-                        # Draw with emoji fallback - PIL will use emoji font for emoji chars
+                if emoji_font:
+                    # Draw character by character, switching fonts for emojis
+                    current_x = x
+                    for char in line:
+                        is_emoji = emoji_pattern.match(char)
+                        char_font = emoji_font if is_emoji else font
+                        
+                        try:
+                            draw.text((current_x, y), char, fill=fill, font=char_font, embedded_color=True)
+                        except:
+                            # Fallback without embedded_color
+                            draw.text((current_x, y), char, fill=fill, font=char_font)
+                        
+                        # Get character width to advance x position
+                        bbox = draw.textbbox((0, 0), char, font=char_font)
+                        char_width = bbox[2] - bbox[0]
+                        current_x += char_width
+                else:
+                    # No emoji font, draw normally
+                    try:
                         draw.text((x, y), line, fill=fill, font=font, embedded_color=True)
-                    else:
-                        draw.text((x, y), line, fill=fill, font=font, embedded_color=True)
-                except:
-                    # Fallback without embedded_color if it fails
-                    draw.text((x, y), line, fill=fill, font=font)
+                    except:
+                        draw.text((x, y), line, fill=fill, font=font)
+                
                 y += line_height
     
     def _format_count(self, count: int) -> str:
