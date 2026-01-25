@@ -422,10 +422,8 @@ class ReelGenerator:
                         '-sc_threshold', '0',  # Disable scene detection
                     ],
                     logger=None,
-                    verbose=False,
                     temp_audiofile=str(self.output_dir / f"temp_audio_{post_id}.m4a"),
-                    remove_temp=True,
-                    write_logfile=False
+                    remove_temp=True
                 )
             except (BrokenPipeError, IOError, OSError) as e:
                 logger.warning(f"Error during video export: {e}, retrying without audio...")
@@ -446,9 +444,7 @@ class ReelGenerator:
                         '-g', '48',
                         '-sc_threshold', '0',
                     ],
-                    logger=None,
-                    verbose=False,
-                    write_logfile=False
+                    logger=None
                 )
             
             logger.info(f"Video created successfully: {output_path}")
