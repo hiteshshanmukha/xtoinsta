@@ -377,32 +377,42 @@ class ReelGenerator:
             post_id = metadata.get('post_id', 'unknown')
             output_path = self.output_dir / f"reel_{post_id}.mp4"
             
-            # Export video with better error handling
+            # Export video with optimized settings for speed
             logger.info(f"Exporting video to: {output_path}")
             try:
                 final.write_videofile(
                     str(output_path),
                     codec=config.VIDEO_CODEC,
                     audio_codec=config.AUDIO_CODEC,
-                    preset=config.VIDEO_PRESET,
+                    preset='ultrafast',  # Fastest encoding
                     fps=config.VIDEO_FPS,
-                    threads=4,
-                    ffmpeg_params=['-max_muxing_queue_size', '9999'],
+                    threads=6,  # More threads for faster processing
+                    bitrate='2000k',  # Lower bitrate for faster encoding
+                    ffmpeg_params=[
+                        '-max_muxing_queue_size', '9999',
+                        '-movflags', '+faststart',  # Optimize for web streaming
+                        '-crf', '28'  # Lower quality for faster encoding
+                    ],
                     logger=None,  # Suppress moviepy logger
                     temp_audiofile=str(self.output_dir / f"temp_audio_{post_id}.m4a"),
                     remove_temp=True
                 )
-            except BrokenPipeError:
-                logger.warning("BrokenPipeError encountered, retrying without audio...")
+            except (BrokenPipeError, IOError) as e:
+                logger.warning(f"Error during video export: {e}, retrying without audio...")
                 # Retry without audio as fallback
                 final_no_audio = final.without_audio()
                 final_no_audio.write_videofile(
                     str(output_path),
                     codec=config.VIDEO_CODEC,
-                    preset=config.VIDEO_PRESET,
+                    preset='ultrafast',
                     fps=config.VIDEO_FPS,
-                    threads=4,
-                    ffmpeg_params=['-max_muxing_queue_size', '9999'],
+                    threads=6,
+                    bitrate='2000k',
+                    ffmpeg_params=[
+                        '-max_muxing_queue_size', '9999',
+                        '-movflags', '+faststart',
+                        '-crf', '28'
+                    ],
                     logger=None
                 )
             
@@ -459,7 +469,7 @@ class ReelGenerator:
         try:
             display_font = ImageFont.truetype("arialbd.ttf", 26)  # Bold for display name
             username_font = ImageFont.truetype("arial.ttf", 22)  # Regular for @username
-            caption_font = ImageFont.truetype("arial.ttf", 32)
+            caption_font = ImageFont.truetype("arial.ttf", 28)  # Larger for better visibility
             metrics_font = ImageFont.truetype("arial.ttf", 20)
         except Exception:
             logger.warning("Could not load TrueType fonts, using default")
@@ -477,8 +487,13 @@ class ReelGenerator:
         avatar_margin_above_caption = 20
         caption_margin_above_video = 30
         
-        # Caption position - just above the video
-        caption_y = video_y - caption_margin_above_video - 40  # 40px for caption height estimate
+        # Calculate caption height based on text length (estimate)
+        caption_text = metadata.get('caption', '')
+        estimated_lines = max(1, len(caption_text) // 50)  # Rough estimate
+        caption_height = estimated_lines * 38  # 38px per line
+        
+        # Caption position - just above the video, with space for multiline
+        caption_y = video_y - caption_margin_above_video - caption_height
         caption_x = video_x
         
         # Avatar position - just above the caption
@@ -558,12 +573,13 @@ class ReelGenerator:
         if current_line:
             lines.append(' '.join(current_line))
         
-        # Draw lines
+        # Draw lines with better spacing
         x, y = position
-        line_height = 35
-        for line in lines[:5]:  # Max 5 lines
-            draw.text((x, y), line, fill=fill, font=font)
-            y += line_height
+        line_height = 38  # Increased for better readability
+        for i, line in enumerate(lines[:6]):  # Max 6 lines
+            if line.strip():  # Only draw non-empty lines
+                draw.text((x, y), line, fill=fill, font=font)
+                y += line_height
     
     def _format_count(self, count: int) -> str:
         """Format count with K notation for thousands."""
