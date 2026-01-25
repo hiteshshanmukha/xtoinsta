@@ -126,8 +126,9 @@ class ReelGenerator:
         import re
         caption = re.sub(r'https?://\S+', '', caption)
         
-        # Remove extra whitespace
-        caption = ' '.join(caption.split())
+        # Clean up extra whitespace but preserve single spaces and line breaks
+        caption = re.sub(r' +', ' ', caption)  # Replace multiple spaces with single space
+        caption = caption.strip()
         
         if len(caption) <= config.MAX_CAPTION_LENGTH:
             return caption
@@ -643,7 +644,7 @@ class ReelGenerator:
         max_width: int
     ):
         """Draw multiline text with word wrapping."""
-        words = text.split()
+        words = text.split(' ')
         lines = []
         current_line = []
         
@@ -667,7 +668,7 @@ class ReelGenerator:
         line_height = 38  # Increased for better readability
         for i, line in enumerate(lines[:6]):  # Max 6 lines
             if line.strip():  # Only draw non-empty lines
-                draw.text((x, y), line, fill=fill, font=font)
+                draw.text((x, y), line, fill=fill, font=font, embedded_color=True)
                 y += line_height
     
     def _format_count(self, count: int) -> str:
