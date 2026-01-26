@@ -47,7 +47,7 @@ FLASK_PORT = int(os.getenv("FLASK_PORT", "5000"))
 FLASK_DEBUG = os.getenv("FLASK_DEBUG", "False").lower() == "true"
 
 # API settings
-API_URL = os.getenv("API_URL", "http://localhost:5000")
+API_URL = os.getenv("API_URL", "http://127.0.0.1:5000")
 
 # yt-dlp settings
 YTDLP_FORMAT = "best[ext=mp4]"
