@@ -1,27 +1,38 @@
 #!/bin/bash
-# Set API URL for internal communication
-export API_URL="http://127.0.0.1:5000"
+set -e  # Exit on error
+
+echo "=== Starting X to Instagram Converter ==="
 
 # Start Flask API in background
+echo "Starting Flask API on port 5000..."
 python app/app_reel.py &
-
-# Store Flask PID
 FLASK_PID=$!
+echo "Flask PID: $FLASK_PID"
 
-# Wait for Flask to start and verify it's running
+# Wait for Flask to be ready
 echo "Waiting for Flask API to start..."
-sleep 3
+sleep 5
 
-# Check if Flask is running
-for i in {1..10}; do
-  if curl -s http://127.0.0.1:5000/ > /dev/null; then
-    echo "Flask API is ready!"
+# Verify Flask is running
+for i in {1..15}; do
+  if curl -f http://127.0.0.1:5000/ > /dev/null 2>&1; then
+    echo "✓ Flask API is ready!"
     break
   fi
-  echo "Waiting for Flask... attempt $i/10"
+  echo "⏳ Waiting for Flask... attempt $i/15"
   sleep 2
 done
 
+# Check if Flask actually started
+if ! curl -f http://127.0.0.1:5000/ > /dev/null 2>&1; then
+  echo "❌ Flask API failed to start!"
+  exit 1
+fi
+
+# Export API URL for Streamlit
+export API_URL="http://127.0.0.1:5000"
+echo "API_URL set to: $API_URL"
+
 # Start Streamlit on Railway's PORT
 echo "Starting Streamlit on port ${PORT:-8501}..."
-streamlit run streamlit_ui/app_reel.py --server.port=${PORT:-8501} --server.address=0.0.0.0
+exec streamlit run streamlit_ui/app_reel.py --server.port=${PORT:-8501} --server.address=0.0.0.0 --server.headless=true
