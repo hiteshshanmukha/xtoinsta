@@ -102,9 +102,11 @@ class ReelGenerator:
                 "timestamp": self._format_timestamp(data.get("upload_date", "")),
                 "post_url": url,
                 "post_id": data.get("id", "unknown"),
+                "has_video": data.get("duration") is not None and data.get("duration", 0) > 0,  # Check if has video
             }
             
             logger.info(f"Successfully extracted metadata for post {metadata['post_id']}")
+            logger.info(f"Content type: {'Video' if metadata['has_video'] else 'Text/Image'}")
             return metadata
             
         except subprocess.CalledProcessError as e:
@@ -805,19 +807,151 @@ class ReelGenerator:
         else:
             return str(count)
     
+    def create_tweet_screenshot(self, avatar_img: Optional[Image.Image], metadata: Dict, background_color: str = "white") -> Optional[Path]:
+        """
+        Create a stylized screenshot of a tweet (for text-only or image tweets).
+        
+        Args:
+            avatar_img: PIL Image of circular avatar (or None).
+            metadata: Dictionary with post metadata.
+            background_color: Background color (white or black).
+            
+        Returns:
+            Path to output screenshot file or None if creation fails.
+        """
+        logger.info("Creating tweet screenshot...")
+        
+        try:
+            # Create canvas - Instagram story size
+            width = config.REEL_WIDTH
+            height = config.REEL_HEIGHT
+            
+            # Background color
+            bg_color = (255, 255, 255) if background_color.lower() == "white" else (0, 0, 0)
+            text_color = (0, 0, 0) if background_color.lower() == "white" else (255, 255, 255)
+            gray_color = (120, 120, 120) if background_color.lower() == "white" else (180, 180, 180)
+            
+            # Create image
+            img = Image.new('RGB', (width, height), bg_color)
+            draw = ImageDraw.Draw(img)
+            
+            # Load fonts
+            try:
+                display_font = ImageFont.truetype("/usr/share/fonts/truetype/roboto/Roboto-Bold.ttf", 32)
+                username_font = ImageFont.truetype("/usr/share/fonts/truetype/roboto/Roboto-Regular.ttf", 26)
+                caption_font = ImageFont.truetype("/usr/share/fonts/truetype/roboto/Roboto-Regular.ttf", 32)
+                metrics_font = ImageFont.truetype("/usr/share/fonts/truetype/roboto/Roboto-Regular.ttf", 24)
+                timestamp_font = ImageFont.truetype("/usr/share/fonts/truetype/roboto/Roboto-Regular.ttf", 22)
+            except:
+                # Fallback
+                display_font = ImageFont.load_default()
+                username_font = display_font
+                caption_font = display_font
+                metrics_font = display_font
+                timestamp_font = display_font
+            
+            # Position elements
+            margin = 80
+            y_pos = 200
+            
+            # Draw avatar if available
+            if avatar_img:
+                avatar_x = margin
+                avatar_y = y_pos
+                img.paste(avatar_img, (avatar_x, avatar_y), avatar_img)
+                text_start_x = avatar_x + avatar_img.width + 15
+                y_pos_text = avatar_y + 10
+            else:
+                text_start_x = margin
+                y_pos_text = y_pos
+            
+            # Draw display name
+            draw.text((text_start_x, y_pos_text), metadata['display_name'], fill=text_color, font=display_font)
+            
+            # Draw username
+            draw.text((text_start_x, y_pos_text + 40), f"@{metadata['username']}", fill=gray_color, font=username_font)
+            
+            # Draw caption below avatar
+            caption_y = y_pos + (avatar_img.height if avatar_img else 0) + 40
+            caption_text = metadata.get('caption', '')
+            
+            if caption_text:
+                # Wrap text
+                max_width = width - (2 * margin)
+                words = caption_text.split()
+                lines = []
+                current_line = ""
+                
+                for word in words:
+                    test_line = current_line + (" " if current_line else "") + word
+                    bbox = draw.textbbox((0, 0), test_line, font=caption_font)
+                    if bbox[2] - bbox[0] <= max_width:
+                        current_line = test_line
+                    else:
+                        if current_line:
+                            lines.append(current_line)
+                        current_line = word
+                
+                if current_line:
+                    lines.append(current_line)
+                
+                # Draw wrapped text
+                line_height = 45
+                for line in lines[:12]:  # Max 12 lines
+                    draw.text((margin, caption_y), line, fill=text_color, font=caption_font)
+                    caption_y += line_height
+            
+            # Draw timestamp
+            timestamp_y = caption_y + 40
+            draw.text((margin, timestamp_y), metadata.get('timestamp', ''), fill=gray_color, font=timestamp_font)
+            
+            # Draw metrics at bottom
+            metrics_y = height - 250
+            metrics_x = margin
+            
+            # Likes, retweets, comments
+            metrics_spacing = 180
+            metrics_data = [
+                (f"❤ {self._format_count(metadata.get('likes', 0))}", "Likes"),
+                (f"🔁 {self._format_count(metadata.get('retweets', 0))}", "Retweets"),
+                (f"💬 {self._format_count(metadata.get('comments', 0))}", "Comments"),
+            ]
+            
+            for i, (metric_text, label) in enumerate(metrics_data):
+                x = metrics_x + (i * metrics_spacing)
+                draw.text((x, metrics_y), metric_text, fill=text_color, font=metrics_font)
+                draw.text((x, metrics_y + 35), label, fill=gray_color, font=timestamp_font)
+            
+            # Add X logo watermark
+            watermark_y = height - 100
+            draw.text((margin, watermark_y), "𝕏 / Twitter", fill=gray_color, font=timestamp_font)
+            
+            # Save screenshot
+            post_id = metadata.get('post_id', 'unknown')
+            output_path = self.output_dir / f"tweet_{post_id}.png"
+            img.save(output_path, 'PNG', quality=95)
+            
+            logger.info(f"✓ Tweet screenshot created: {output_path}")
+            return output_path
+            
+        except Exception as e:
+            logger.error(f"Failed to create tweet screenshot: {e}")
+            return None
+    
     def create_reel_from_url(self, url: str, resolution: str = "720p", background_color: str = "white") -> Tuple[Optional[Path], dict]:
         """
-        Main orchestration method to create reel from X/Twitter URL.
+        Main orchestration method to create content from X/Twitter URL.
+        Creates video reel if tweet has video, otherwise creates screenshot.
         
         Args:
             url: X/Twitter post URL.
-            resolution: Desired resolution (360p, 480p, 720p, 1080p).
+            resolution: Desired resolution (360p, 480p, 720p, 1080p) - only for videos.
             background_color: Background color (white or black).
             
         Returns:
             Tuple of (output_path, metadata) or (None, error_message).
         """
-        logger.info(f"Starting reel creation for URL: {url} with resolution: {resolution} and background: {background_color}")
+        logger.info(f"Starting content creation for URL: {url} with resolution: {resolution} and background: {background_color}")
         
         try:
             # Step 1: Extract metadata
@@ -826,24 +960,34 @@ class ReelGenerator:
             # Step 2: Prepare avatar
             avatar_img = self.prepare_avatar(metadata['avatar_url'], metadata.get('username'), background_color)
             
-            # Step 3: Download video with resolution
-            video_path = self.download_video(url, resolution=resolution)
-            if not video_path:
-                return None, {"error": "Failed to download video"}
-            
-            # Step 4: Create reel
-            output_path = self.create_reel(video_path, avatar_img, metadata, background_color=background_color)
+            # Step 3: Check if tweet has video
+            if metadata.get('has_video', False):
+                logger.info("Tweet contains video - creating video reel")
+                # Download video with resolution
+                video_path = self.download_video(url, resolution=resolution)
+                if not video_path:
+                    logger.warning("Video download failed, creating screenshot instead")
+                    # Fallback to screenshot if video download fails
+                    output_path = self.create_tweet_screenshot(avatar_img, metadata, background_color)
+                else:
+                    # Create reel
+                    output_path = self.create_reel(video_path, avatar_img, metadata, background_color=background_color)
+            else:
+                logger.info("Tweet is text/image only - creating screenshot")
+                # Create screenshot for text/image tweets
+                output_path = self.create_tweet_screenshot(avatar_img, metadata, background_color)
             
             if output_path:
+                metadata['content_type'] = 'video' if output_path.suffix == '.mp4' else 'image'
                 return output_path, metadata
             else:
-                return None, {"error": "Failed to create reel"}
+                return None, {"error": "Failed to create content"}
                 
         except ValueError as e:
             error_msg = str(e)
-            logger.error(f"ValueError during reel creation: {error_msg}")
+            logger.error(f"ValueError during content creation: {error_msg}")
             return None, {"error": error_msg}
         except Exception as e:
             error_msg = f"Unexpected error: {str(e)}"
-            logger.error(f"Exception during reel creation: {error_msg}")
+            logger.error(f"Exception during content creation: {error_msg}")
             return None, {"error": error_msg}

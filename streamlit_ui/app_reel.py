@@ -11,7 +11,7 @@ import config
 
 # Page configuration
 st.set_page_config(
-    page_title="X to Instagram Reel Converter",
+    page_title="X to Instagram Content Converter",
     layout="wide"
 )
 
@@ -51,9 +51,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Header
-st.markdown('<div class="main-header">X to Instagram Reel Converter</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">X to Instagram Content Converter</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="subtitle">Transform X/Twitter videos into vertical Instagram Reels with full post context</div>',
+    '<div class="subtitle">Transform X/Twitter posts into Instagram-ready content: Reels for videos, Screenshots for text/images</div>',
     unsafe_allow_html=True
 )
 
@@ -90,18 +90,23 @@ with col2:
     st.caption(f"Background: **{background_color}**")
     
     # Create button
-    create_button = st.button("Create Reel", type="primary", use_container_width=True)
+    create_button = st.button("Create Content", type="primary", use_container_width=True)
     
     # Instructions
     with st.expander("How to use"):
         st.markdown("""
-        1. Find an X/Twitter post with a video
+        1. Find any X/Twitter post (text, image, or video)
         2. Copy the post URL (e.g., `https://x.com/username/status/1234567890`)
-        3. Select video quality (360p-1080p)
-        4. Click "Create Reel"
-        5. Preview and download your video
+        3. Select video quality (only applies to video posts)
+        4. Choose background color (black or white)
+        5. Click "Create Content"
+        6. Download your content!
         
-        **Resolution Guide:**
+        **What you get:**
+        - **Video posts**: Vertical Instagram Reel (MP4) with post context
+        - **Text/Image posts**: Stylized screenshot (PNG) perfect for Instagram Stories
+        
+        **Resolution Guide (for videos):**
         - **360p**: Fastest (15-30 seconds) - Good for quick sharing
         - **480p**: Fast (30-60 seconds) - Balanced quality/speed
         - **720p**: Recommended (60-90 seconds) - Great quality
@@ -109,12 +114,14 @@ with col2:
         """)
 
 # Initialize session state for persistence
-if 'video_data' not in st.session_state:
-    st.session_state.video_data = None
+if 'file_data' not in st.session_state:
+    st.session_state.file_data = None
 if 'metadata' not in st.session_state:
     st.session_state.metadata = None
 if 'filename' not in st.session_state:
     st.session_state.filename = None
+if 'content_type' not in st.session_state:
+    st.session_state.content_type = None
 
 # Process reel creation
 if create_button:
@@ -125,7 +132,7 @@ if create_button:
     else:
         # Show loading spinner
         estimated_time = "15-30 seconds" if resolution == "360p" else "30-60 seconds" if resolution == "480p" else "60-90 seconds" if resolution == "720p" else "2-3 minutes"
-        with st.spinner(f"Creating your reel in {resolution}... This may take {estimated_time}. Please wait..."):
+        with st.spinner(f"Creating your content... This may take {estimated_time} for videos. Please wait..."):
             try:
                 # Make API request with resolution and background color
                 response = requests.post(
@@ -138,8 +145,9 @@ if create_button:
                     result = response.json()
                     metadata = result.get('metadata', {})
                     filename = result.get('file')
+                    content_type = result.get('content_type', 'video')  # 'video' or 'image'
                     
-                    # Fetch the video file
+                    # Fetch the file
                     download_response = requests.get(
                         f"{API_URL}/api/download-reel/{filename}",
                         timeout=120
@@ -147,13 +155,14 @@ if create_button:
                     
                     if download_response.status_code == 200:
                         # Store in session state for persistence
-                        st.session_state.video_data = download_response.content
+                        st.session_state.file_data = download_response.content
                         st.session_state.metadata = metadata
                         st.session_state.filename = filename
+                        st.session_state.content_type = content_type
                         
-                        st.success("Reel created successfully!")
+                        st.success(f"{'Reel' if content_type == 'video' else 'Screenshot'} created successfully!")
                     else:
-                        st.error(f"Failed to fetch video: {download_response.status_code}")
+                        st.error(f"Failed to fetch file: {download_response.status_code}")
                 
                 else:
                     # Error response
@@ -190,31 +199,33 @@ if create_button:
             
             except Exception as e:
                 st.error(f"Unexpected error: {str(e)}")
-                st.info("Check the logs for more details or try again.")
-
-# Display video preview and download if available in session state
-if st.session_state.video_data:
+          file preview and download if available in session state
+if st.session_state.file_data:
     st.markdown("---")
     
     with col2:
-        # Video preview
-        st.markdown("### Video Preview")
-        st.video(st.session_state.video_data)
+        # File preview
+        st.markdown(f"### {'Video' if st.session_state.content_type == 'video' else 'Image'} Preview")
+        
+        if st.session_state.content_type == 'video':
+            st.video(st.session_state.file_data)
+        else:
+            st.image(st.session_state.file_data)
         
         # Metadata display
         metadata = st.session_state.metadata
-        st.markdown("### Reel Information")
+        st.markdown("### Post Information")
         
         metric_cols = st.columns(4)
         with metric_cols[0]:
             st.metric("Username", f"@{metadata.get('username', 'N/A')}")
         with metric_cols[1]:
-            file_size = len(st.session_state.video_data) / (1024 * 1024)
+            file_size = len(st.session_state.file_data) / (1024 * 1024)
             st.metric("File Size", f"{file_size:.2f} MB")
         with metric_cols[2]:
             st.metric("Resolution", "1080×1920")
         with metric_cols[3]:
-            st.metric("Format", "MP4")
+            st.metric("Format", st.session_state.content_type.upper())
         
         # Detailed metadata
         with st.expander("Post Details"):
@@ -227,19 +238,25 @@ if st.session_state.video_data:
                 st.markdown(f"**Posted:** {metadata.get('timestamp', 'N/A')}")
         
         # Persistent download button
-        st.markdown("### Download Your Reel")
+        st.markdown("### Download Your Content")
+        file_extension = 'MP4' if st.session_state.content_type == 'video' else 'PNG'
+        mimetype = 'video/mp4' if st.session_state.content_type == 'video' else 'image/png'
+        
         st.download_button(
-            label="Download MP4",
-            data=st.session_state.video_data,
+            label=f"Download {file_extension}",
+            data=st.session_state.file_data,
             file_name=st.session_state.filename,
-            mime="video/mp4",
+            mime=mimetype,
             use_container_width=True,
             key="download_btn"
         )
         
         # Clear button
-        if st.button("Create New Reel", use_container_width=True):
-            st.session_state.video_data = None
+        if st.button("Create New", use_container_width=True):
+            st.session_state.file_data = None
+            st.session_state.metadata = None
+            st.session_state.filename = None
+            st.session_state.content_typata = None
             st.session_state.metadata = None
             st.session_state.filename = None
             st.rerun()

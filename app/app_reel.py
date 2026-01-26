@@ -82,7 +82,8 @@ def create_reel():
             "post_id": metadata.get('post_id', 'unknown'),
             "username": metadata.get('username', 'unknown'),
             "file": filename,
-            "message": "Reel created successfully",
+            "content_type": metadata.get('content_type', 'video'),  # 'video' or 'image'
+            "message": "Content created successfully",
             "metadata": {
                 "username": metadata.get('username'),
                 "display_name": metadata.get('display_name'),
@@ -108,21 +109,22 @@ def create_reel():
 @app.route('/api/download-reel/<filename>', methods=['GET'])
 def download_reel(filename):
     """
-    Download a generated reel file.
+    Download a generated file (video or image).
     
     Args:
-        filename: Name of the reel file (e.g., 'reel_1234567890.mp4')
+        filename: Name of the file (e.g., 'reel_1234567890.mp4' or 'tweet_1234567890.png')
     
     Returns:
-        The MP4 file or 404 if not found
+        The file or 404 if not found
     """
     try:
         # Validate filename (security: prevent directory traversal)
         if '..' in filename or '/' in filename or '\\' in filename:
             return jsonify({"error": "Invalid filename"}), 400
         
-        if not filename.endswith('.mp4'):
-            return jsonify({"error": "Only MP4 files can be downloaded"}), 400
+        # Accept both MP4 and PNG files
+        if not (filename.endswith('.mp4') or filename.endswith('.png')):
+            return jsonify({"error": "Only MP4 and PNG files can be downloaded"}), 400
         
         file_path = config.DOWNLOADS_DIR / filename
         
@@ -130,10 +132,13 @@ def download_reel(filename):
             logger.warning(f"File not found: {filename}")
             return jsonify({"error": "File not found"}), 404
         
+        # Determine MIME type based on extension
+        mimetype = 'video/mp4' if filename.endswith('.mp4') else 'image/png'
+        
         logger.info(f"Serving file: {filename}")
         return send_file(
             file_path,
-            mimetype='video/mp4',
+            mimetype=mimetype,
             as_attachment=True,
             download_name=filename
         )
