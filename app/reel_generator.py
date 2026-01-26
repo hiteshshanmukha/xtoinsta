@@ -127,87 +127,78 @@ class ReelGenerator:
     
     def _extract_metadata_fallback(self, url: str) -> Dict:
         """
-        Fallback method to extract basic metadata from non-video tweets.
-        Uses web scraping as yt-dlp doesn't work for text/image-only tweets.
+        Fallback method to extract metadata from non-video tweets.
+        Uses alternative methods when yt-dlp fails.
         
         Args:
             url: X/Twitter post URL.
             
         Returns:
-            Dictionary containing basic post metadata.
+            Dictionary containing post metadata including images.
         """
         logger.info("Using fallback metadata extraction for non-video tweet")
         
         try:
-            # Extract post ID from URL
-            # URL format: https://x.com/username/status/1234567890
+            # Extract post ID and username from URL
             import re
             match = re.search(r'/status/(\d+)', url)
             post_id = match.group(1) if match else "unknown"
             
-            # Extract username from URL
             username_match = re.search(r'x\.com/([^/]+)/', url) or re.search(r'twitter\.com/([^/]+)/', url)
             username = username_match.group(1) if username_match else "unknown"
             
-            # Fetch the tweet page
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
-            response = requests.get(url, headers=headers, timeout=15)
-            response.raise_for_status()
+            # Try using yt-dlp with --no-check-certificate and ignore errors for metadata only
+            try:
+                result = subprocess.run(
+                    ["yt-dlp", "--dump-json", "--skip-download", "--no-check-certificate", "--ignore-errors", url],
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                
+                if result.stdout:
+                    data = json.loads(result.stdout)
+                    
+                    # Extract images if available
+                    images = []
+                    thumbnails = data.get('thumbnails', [])
+                    if thumbnails:
+                        # Get the highest quality thumbnail
+                        for thumb in thumbnails:
+                            if thumb.get('url') and 'pbs.twimg.com' in thumb.get('url', ''):
+                                images.append(thumb['url'])
+                    
+                    # Get caption
+                    caption = data.get('description', '') or data.get('title', '')
+                    
+                    metadata = {
+                        "username": data.get("uploader_id", username),
+                        "display_name": data.get("uploader", username),
+                        "caption": self._truncate_caption(caption),
+                        "avatar_url": data.get("uploader_url", f"https://twitter.com/{username}"),
+                        "likes": data.get("like_count", 0) or 0,
+                        "retweets": data.get("repost_count", 0) or 0,
+                        "comments": data.get("comment_count", 0) or 0,
+                        "views": data.get("view_count", 0) or 0,
+                        "timestamp": self._format_timestamp(data.get("upload_date", "")),
+                        "post_url": url,
+                        "post_id": post_id,
+                        "has_video": False,
+                        "images": images[:4]  # Max 4 images
+                    }
+                    
+                    logger.info(f"Fallback extraction successful - Found {len(images)} images")
+                    return metadata
+                    
+            except Exception as e:
+                logger.warning(f"yt-dlp fallback also failed: {e}")
             
-            # Extract basic info from page title and meta tags
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Try to get display name and caption from meta tags
-            display_name = username
-            caption = ""
-            
-            # Try og:title for display name
-            og_title = soup.find('meta', property='og:title')
-            if og_title and og_title.get('content'):
-                display_name = og_title['content'].split(' on X:')[0].strip()
-            
-            # Try og:description for caption
-            og_desc = soup.find('meta', property='og:description')
-            if og_desc and og_desc.get('content'):
-                caption = og_desc['content'].strip()
-            
-            # Clean up caption
-            caption = self._truncate_caption(caption)
-            
-            logger.info(f"Fallback extraction successful - Post ID: {post_id}, Username: {username}")
-            
-            metadata = {
-                "username": username,
-                "display_name": display_name,
-                "caption": caption,
-                "avatar_url": f"https://twitter.com/{username}",  # Will be resolved in prepare_avatar
-                "likes": 0,
-                "retweets": 0,
-                "comments": 0,
-                "views": 0,
-                "timestamp": datetime.now().strftime("%b %d, %Y"),
-                "post_url": url,
-                "post_id": post_id,
-                "has_video": False,  # Fallback is only for non-video tweets
-            }
-            
-            return metadata
-            
-        except Exception as e:
-            logger.error(f"Fallback metadata extraction failed: {e}")
-            # Return minimal metadata so we can at least try to create something
-            match = re.search(r'/status/(\d+)', url)
-            post_id = match.group(1) if match else "unknown"
-            username_match = re.search(r'x\.com/([^/]+)/', url) or re.search(r'twitter\.com/([^/]+)/', url)
-            username = username_match.group(1) if username_match else "unknown"
-            
+            # Final fallback - return basic metadata
+            logger.info("Using minimal metadata - will create basic screenshot")
             return {
                 "username": username,
                 "display_name": username,
-                "caption": "Tweet content",
+                "caption": f"Tweet from @{username}",
                 "avatar_url": f"https://twitter.com/{username}",
                 "likes": 0,
                 "retweets": 0,
@@ -217,6 +208,30 @@ class ReelGenerator:
                 "post_url": url,
                 "post_id": post_id,
                 "has_video": False,
+                "images": []
+            }
+            
+        except Exception as e:
+            logger.error(f"All fallback methods failed: {e}")
+            match = re.search(r'/status/(\d+)', url)
+            post_id = match.group(1) if match else "unknown"
+            username_match = re.search(r'x\.com/([^/]+)/', url) or re.search(r'twitter\.com/([^/]+)/', url)
+            username = username_match.group(1) if username_match else "unknown"
+            
+            return {
+                "username": username,
+                "display_name": username,
+                "caption": f"Tweet from @{username}",
+                "avatar_url": f"https://twitter.com/{username}",
+                "likes": 0,
+                "retweets": 0,
+                "comments": 0,
+                "views": 0,
+                "timestamp": datetime.now().strftime("%b %d, %Y"),
+                "post_url": url,
+                "post_id": post_id,
+                "has_video": False,
+                "images": []
             }
     
     def _truncate_caption(self, caption: str) -> str:
@@ -998,8 +1013,77 @@ class ReelGenerator:
                     draw.text((margin, caption_y), line, fill=text_color, font=caption_font)
                     caption_y += line_height
             
+            # Download and display tweet images if available
+            images = metadata.get('images', [])
+            image_y = caption_y + 40
+            
+            if images:
+                logger.info(f"Downloading {len(images)} tweet images...")
+                available_width = width - (2 * margin)
+                
+                if len(images) == 1:
+                    # Single image - larger display
+                    try:
+                        img_response = requests.get(images[0], timeout=10)
+                        tweet_img = Image.open(io.BytesIO(img_response.content))
+                        
+                        # Resize to fit
+                        max_img_height = 600
+                        aspect = tweet_img.width / tweet_img.height
+                        new_width = min(available_width, int(max_img_height * aspect))
+                        new_height = int(new_width / aspect)
+                        
+                        tweet_img = tweet_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                        
+                        # Center the image
+                        img_x = margin + (available_width - new_width) // 2
+                        img.paste(tweet_img, (img_x, image_y))
+                        image_y += new_height + 40
+                    except Exception as e:
+                        logger.warning(f"Failed to download image: {e}")
+                
+                elif len(images) == 2:
+                    # Two images side by side
+                    img_width = (available_width - 20) // 2
+                    try:
+                        for i, img_url in enumerate(images[:2]):
+                            img_response = requests.get(img_url, timeout=10)
+                            tweet_img = Image.open(io.BytesIO(img_response.content))
+                            
+                            # Make square
+                            tweet_img = tweet_img.resize((img_width, img_width), Image.Resampling.LANCZOS)
+                            
+                            img_x = margin + (i * (img_width + 20))
+                            img.paste(tweet_img, (img_x, image_y))
+                        
+                        image_y += img_width + 40
+                    except Exception as e:
+                        logger.warning(f"Failed to download images: {e}")
+                
+                elif len(images) >= 3:
+                    # Grid layout for 3-4 images
+                    img_size = (available_width - 20) // 2
+                    try:
+                        for i, img_url in enumerate(images[:4]):
+                            img_response = requests.get(img_url, timeout=10)
+                            tweet_img = Image.open(io.BytesIO(img_response.content))
+                            
+                            # Make square
+                            tweet_img = tweet_img.resize((img_size, img_size), Image.Resampling.LANCZOS)
+                            
+                            row = i // 2
+                            col = i % 2
+                            img_x = margin + (col * (img_size + 20))
+                            img_y = image_y + (row * (img_size + 20))
+                            img.paste(tweet_img, (img_x, img_y))
+                        
+                        rows = (len(images[:4]) + 1) // 2
+                        image_y += (rows * (img_size + 20)) + 20
+                    except Exception as e:
+                        logger.warning(f"Failed to download images: {e}")
+            
             # Draw timestamp
-            timestamp_y = caption_y + 40
+            timestamp_y = image_y + 20
             draw.text((margin, timestamp_y), metadata.get('timestamp', ''), fill=gray_color, font=timestamp_font)
             
             # Draw metrics at bottom
