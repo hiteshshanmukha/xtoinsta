@@ -48,6 +48,7 @@ class ReelGenerator:
     def extract_metadata(self, url: str) -> Dict:
         """
         Extract metadata from X/Twitter post using yt-dlp.
+        Falls back to basic extraction for non-video tweets.
         
         Args:
             url: X/Twitter post URL.
@@ -110,9 +111,11 @@ class ReelGenerator:
             return metadata
             
         except subprocess.CalledProcessError as e:
-            error_msg = f"yt-dlp failed: {e.stderr}"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
+            # yt-dlp failed - likely a non-video tweet, try fallback extraction
+            logger.warning(f"yt-dlp failed (likely non-video tweet): {e.stderr}")
+            logger.info("Attempting fallback metadata extraction...")
+            return self._extract_metadata_fallback(url)
+            
         except json.JSONDecodeError as e:
             error_msg = f"Failed to parse yt-dlp output: {e}"
             logger.error(error_msg)
@@ -121,6 +124,100 @@ class ReelGenerator:
             error_msg = f"Unexpected error extracting metadata: {e}"
             logger.error(error_msg)
             raise ValueError(error_msg)
+    
+    def _extract_metadata_fallback(self, url: str) -> Dict:
+        """
+        Fallback method to extract basic metadata from non-video tweets.
+        Uses web scraping as yt-dlp doesn't work for text/image-only tweets.
+        
+        Args:
+            url: X/Twitter post URL.
+            
+        Returns:
+            Dictionary containing basic post metadata.
+        """
+        logger.info("Using fallback metadata extraction for non-video tweet")
+        
+        try:
+            # Extract post ID from URL
+            # URL format: https://x.com/username/status/1234567890
+            import re
+            match = re.search(r'/status/(\d+)', url)
+            post_id = match.group(1) if match else "unknown"
+            
+            # Extract username from URL
+            username_match = re.search(r'x\.com/([^/]+)/', url) or re.search(r'twitter\.com/([^/]+)/', url)
+            username = username_match.group(1) if username_match else "unknown"
+            
+            # Fetch the tweet page
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            response = requests.get(url, headers=headers, timeout=15)
+            response.raise_for_status()
+            
+            # Extract basic info from page title and meta tags
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Try to get display name and caption from meta tags
+            display_name = username
+            caption = ""
+            
+            # Try og:title for display name
+            og_title = soup.find('meta', property='og:title')
+            if og_title and og_title.get('content'):
+                display_name = og_title['content'].split(' on X:')[0].strip()
+            
+            # Try og:description for caption
+            og_desc = soup.find('meta', property='og:description')
+            if og_desc and og_desc.get('content'):
+                caption = og_desc['content'].strip()
+            
+            # Clean up caption
+            caption = self._truncate_caption(caption)
+            
+            logger.info(f"Fallback extraction successful - Post ID: {post_id}, Username: {username}")
+            
+            metadata = {
+                "username": username,
+                "display_name": display_name,
+                "caption": caption,
+                "avatar_url": f"https://twitter.com/{username}",  # Will be resolved in prepare_avatar
+                "likes": 0,
+                "retweets": 0,
+                "comments": 0,
+                "views": 0,
+                "timestamp": datetime.now().strftime("%b %d, %Y"),
+                "post_url": url,
+                "post_id": post_id,
+                "has_video": False,  # Fallback is only for non-video tweets
+            }
+            
+            return metadata
+            
+        except Exception as e:
+            logger.error(f"Fallback metadata extraction failed: {e}")
+            # Return minimal metadata so we can at least try to create something
+            match = re.search(r'/status/(\d+)', url)
+            post_id = match.group(1) if match else "unknown"
+            username_match = re.search(r'x\.com/([^/]+)/', url) or re.search(r'twitter\.com/([^/]+)/', url)
+            username = username_match.group(1) if username_match else "unknown"
+            
+            return {
+                "username": username,
+                "display_name": username,
+                "caption": "Tweet content",
+                "avatar_url": f"https://twitter.com/{username}",
+                "likes": 0,
+                "retweets": 0,
+                "comments": 0,
+                "views": 0,
+                "timestamp": datetime.now().strftime("%b %d, %Y"),
+                "post_url": url,
+                "post_id": post_id,
+                "has_video": False,
+            }
     
     def _truncate_caption(self, caption: str) -> str:
         """Truncate caption to maximum length while preserving spacing and removing URLs."""
