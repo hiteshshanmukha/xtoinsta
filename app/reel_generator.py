@@ -150,13 +150,14 @@ class ReelGenerator:
         except Exception:
             return datetime.now().strftime("%b %d, %Y")
     
-    def prepare_avatar(self, avatar_url: str, username: str = None) -> Optional[Image.Image]:
+    def prepare_avatar(self, avatar_url: str, username: str = None, background_color: str = "white") -> Optional[Image.Image]:
         """
-        Download and prepare circular avatar image with white border.
+        Download and prepare circular avatar image with border matching background.
         
         Args:
             avatar_url: URL of the avatar image or profile URL.
             username: Twitter username (for constructing avatar URL if needed).
+            background_color: Background color (white or black) for border.
             
         Returns:
             PIL Image object or None if download fails.
@@ -242,14 +243,15 @@ class ReelGenerator:
                 output.paste(avatar.convert('RGBA'), (0, 0))
             output.putalpha(mask)
             
-            # Add white border
+            # Add border matching background color
+            border_color = (255, 255, 255, 255) if background_color.lower() == "white" else (0, 0, 0, 255)
             border_size = size + config.AVATAR_BORDER_WIDTH * 2
-            logger.info(f"Adding white border - final size: {border_size}x{border_size}")
-            bordered = Image.new('RGBA', (border_size, border_size), (255, 255, 255, 255))
+            logger.info(f"Adding {background_color} border - final size: {border_size}x{border_size}")
+            bordered = Image.new('RGBA', (border_size, border_size), border_color)
             
-            # Draw white circle
+            # Draw circle with matching color
             draw = ImageDraw.Draw(bordered)
-            draw.ellipse((0, 0, border_size, border_size), fill=(255, 255, 255, 255))
+            draw.ellipse((0, 0, border_size, border_size), fill=border_color)
             
             # Paste avatar on top
             offset = config.AVATAR_BORDER_WIDTH
@@ -822,7 +824,7 @@ class ReelGenerator:
             metadata = self.extract_metadata(url)
             
             # Step 2: Prepare avatar
-            avatar_img = self.prepare_avatar(metadata['avatar_url'], metadata.get('username'))
+            avatar_img = self.prepare_avatar(metadata['avatar_url'], metadata.get('username'), background_color)
             
             # Step 3: Download video with resolution
             video_path = self.download_video(url, resolution=resolution)
