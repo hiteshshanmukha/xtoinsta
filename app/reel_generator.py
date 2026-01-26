@@ -413,7 +413,8 @@ class ReelGenerator:
             output_path = self.output_dir / f"reel_{post_id}.mp4"
             
             # Export video with maximum speed optimization
-            logger.info(f"Exporting video to: {output_path}")
+            logger.info(f"Exporting video to: {output_path} - Duration: {duration:.2f}s")
+            logger.info("This may take 1-3 minutes depending on video length...")
             try:
                 final.write_videofile(
                     str(output_path),
@@ -440,6 +441,7 @@ class ReelGenerator:
                     temp_audiofile=str(self.output_dir / f"temp_audio_{post_id}.m4a"),
                     remove_temp=True
                 )
+                logger.info(f"✓ Video export completed successfully!")
             except (BrokenPipeError, IOError, OSError) as e:
                 logger.warning(f"Error during video export: {e}, retrying without audio...")
                 final_no_audio = final.without_audio()
@@ -461,8 +463,10 @@ class ReelGenerator:
                     ],
                     logger=None
                 )
+                logger.info(f"✓ Video export completed (no audio) successfully!")
             
-            logger.info(f"Video created successfully: {output_path}")
+            logger.info(f"✓ Video created successfully: {output_path}")
+            logger.info(f"✓ File size: {output_path.stat().st_size / (1024*1024):.2f} MB")
             return output_path
             
         except Exception as e:

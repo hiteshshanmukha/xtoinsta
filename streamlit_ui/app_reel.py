@@ -124,7 +124,8 @@ if create_button:
         st.error("Invalid URL format. Please enter a valid X/Twitter post URL")
     else:
         # Show loading spinner
-        with st.spinner(f"Creating your reel in {resolution}... Please wait..."):
+        estimated_time = "15-30 seconds" if resolution == "360p" else "30-60 seconds" if resolution == "480p" else "60-90 seconds" if resolution == "720p" else "2-3 minutes"
+        with st.spinner(f"Creating your reel in {resolution}... This may take {estimated_time}. Please wait..."):
             try:
                 # Make API request with resolution and background color
                 response = requests.post(

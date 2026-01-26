@@ -39,7 +39,7 @@ FOOTER_HEIGHT = 300
 FOOTER_ALPHA = 180
 
 # Processing settings
-MAX_PROCESSING_TIMEOUT = int(os.getenv("MAX_PROCESSING_TIMEOUT", "600"))
+MAX_PROCESSING_TIMEOUT = int(os.getenv("MAX_PROCESSING_TIMEOUT", "900"))  # 15 minutes
 
 # Flask settings
 FLASK_HOST = os.getenv("FLASK_HOST", "0.0.0.0")
