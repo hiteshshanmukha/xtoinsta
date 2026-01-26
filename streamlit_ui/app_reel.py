@@ -178,11 +178,15 @@ if create_button:
                         """)
             
             except requests.Timeout:
-                st.error("Request timed out. The video might be too long or the server is busy. Please try again.")
+                st.error("⏱️ Request timed out. The video might be too long or the server is busy. Please try again with a shorter video or lower resolution.")
             
             except requests.ConnectionError:
-                st.error("Cannot connect to the API. Make sure the Flask backend is running on " + API_URL)
-                st.info("Start the backend with: `python app/app_reel.py`")
+                st.error(f"🔌 Cannot connect to the API server.")
+                st.info(f"API URL: {API_URL}")
+                if "localhost" in API_URL:
+                    st.warning("Running locally? Start the backend with: `python app/app_reel.py`")
+                else:
+                    st.warning("Deployment issue detected. Check Railway logs or redeploy the application.")
             
             except Exception as e:
                 st.error(f"Unexpected error: {str(e)}")
