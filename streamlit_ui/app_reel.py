@@ -199,7 +199,9 @@ if create_button:
             
             except Exception as e:
                 st.error(f"Unexpected error: {str(e)}")
-          file preview and download if available in session state
+                st.info("Check the logs for more details or try again.")
+
+# Display file preview and download if available in session state
 if st.session_state.file_data:
     st.markdown("---")
     
