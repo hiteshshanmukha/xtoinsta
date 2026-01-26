@@ -333,7 +333,8 @@ class ReelGenerator:
         self,
         video_path: str,
         avatar_img: Optional[Image.Image],
-        metadata: Dict
+        metadata: Dict,
+        background_color: str = "white"
     ) -> Optional[Path]:
         """
         Create vertical video with Twitter-like overlays.
@@ -342,6 +343,7 @@ class ReelGenerator:
             video_path: Path to source video file.
             avatar_img: PIL Image of circular avatar (or None).
             metadata: Dictionary with post metadata.
+            background_color: Background color (white or black).
             
         Returns:
             Path to output reel file or None if creation fails.
@@ -358,10 +360,9 @@ class ReelGenerator:
             
             logger.info(f"Source video: {original_w}x{original_h}, {duration:.2f}s")
             
-            # Create solid background (white or black)
-            # Use white background
-            background_color = (255, 255, 255)  # White. Change to (0, 0, 0) for black
-            background_frame = np.full((config.REEL_HEIGHT, config.REEL_WIDTH, 3), background_color, dtype=np.uint8)
+            # Create solid background based on user choice
+            bg_rgb = (255, 255, 255) if background_color.lower() == "white" else (0, 0, 0)
+            background_frame = np.full((config.REEL_HEIGHT, config.REEL_WIDTH, 3), bg_rgb, dtype=np.uint8)
             background_clip = ImageClip(background_frame, duration=duration)
             
             # Keep original aspect ratio - resize to fit within frame with horizontal margins
@@ -394,8 +395,8 @@ class ReelGenerator:
             
             resized_video = resized_video.with_position((video_x, video_y))
             
-            # Create overlay with text and avatar - pass video position info
-            overlay = self._create_overlay(avatar_img, metadata, duration, video_x, new_w, video_y)
+            # Create overlay with text and avatar - pass video position info and background color
+            overlay = self._create_overlay(avatar_img, metadata, duration, video_x, new_w, video_y, background_color)
             
             # Composite background, video and overlay
             final = CompositeVideoClip(
@@ -540,7 +541,8 @@ class ReelGenerator:
         duration: float,
         video_x: int = 80,
         video_w: int = 900,
-        video_y: int = 400
+        video_y: int = 400,
+        background_color: str = "white"
     ) -> ImageClip:
         """Create clean text overlay - TweeTakulu screenshot style."""
         # Create transparent overlay
@@ -626,9 +628,13 @@ class ReelGenerator:
                     caption_font = base_font
                     metrics_font = base_font
         
-        # Text colors for white background
-        text_color = (0, 0, 0, 255)  # Black
-        gray_text_color = (120, 120, 120, 255)
+        # Text colors based on background - white bg = black text, black bg = white text
+        if background_color.lower() == "white":
+            text_color = (0, 0, 0, 255)  # Black text
+            gray_text_color = (120, 120, 120, 255)  # Dark gray
+        else:  # black background
+            text_color = (255, 255, 255, 255)  # White text
+            gray_text_color = (180, 180, 180, 255)  # Light gray
         
         # Position elements relative to video position
         # Avatar is above the video, aligned with left edge of video
@@ -793,18 +799,19 @@ class ReelGenerator:
         else:
             return str(count)
     
-    def create_reel_from_url(self, url: str, resolution: str = "720p") -> Tuple[Optional[Path], dict]:
+    def create_reel_from_url(self, url: str, resolution: str = "720p", background_color: str = "white") -> Tuple[Optional[Path], dict]:
         """
         Main orchestration method to create reel from X/Twitter URL.
         
         Args:
             url: X/Twitter post URL.
             resolution: Desired resolution (360p, 480p, 720p, 1080p).
+            background_color: Background color (white or black).
             
         Returns:
             Tuple of (output_path, metadata) or (None, error_message).
         """
-        logger.info(f"Starting reel creation for URL: {url} with resolution: {resolution}")
+        logger.info(f"Starting reel creation for URL: {url} with resolution: {resolution} and background: {background_color}")
         
         try:
             # Step 1: Extract metadata
@@ -819,7 +826,7 @@ class ReelGenerator:
                 return None, {"error": "Failed to download video"}
             
             # Step 4: Create reel
-            output_path = self.create_reel(video_path, avatar_img, metadata)
+            output_path = self.create_reel(video_path, avatar_img, metadata, background_color=background_color)
             
             if output_path:
                 return output_path, metadata

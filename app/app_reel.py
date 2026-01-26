@@ -54,6 +54,7 @@ def create_reel():
         
         url = data.get('url')
         resolution = data.get('resolution', '720p')  # Default to 720p
+        background_color = data.get('background_color', 'white')  # Default to white
         if not url:
             return jsonify({"error": "Missing 'url' field in request"}), 400
         
@@ -61,10 +62,10 @@ def create_reel():
         if not (url.startswith('https://x.com/') or url.startswith('https://twitter.com/')):
             return jsonify({"error": "Invalid X/Twitter URL format"}), 400
         
-        logger.info(f"Received create-reel request for URL: {url} with resolution: {resolution}")
+        logger.info(f"Received create-reel request for URL: {url} with resolution: {resolution} and background: {background_color}")
         
-        # Create reel with resolution parameter
-        output_path, metadata = reel_generator.create_reel_from_url(url, resolution=resolution)
+        # Create reel with resolution and background color parameters
+        output_path, metadata = reel_generator.create_reel_from_url(url, resolution=resolution, background_color=background_color)
         
         if output_path is None:
             error_msg = metadata.get('error', 'Unknown error occurred')

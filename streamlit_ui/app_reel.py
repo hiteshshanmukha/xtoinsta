@@ -79,6 +79,16 @@ with col2:
     )
     st.caption(f"Selected: **{resolution}** {'Fast' if resolution in ['360p', '480p'] else 'HD' if resolution == '720p' else 'Full HD'}")
     
+    # Background color selector
+    st.markdown("### Background Color")
+    background_color = st.selectbox(
+        "Choose background color",
+        options=["White", "Black"],
+        index=0,
+        label_visibility="collapsed"
+    )
+    st.caption(f"Background: **{background_color}**")
+    
     # Create button
     create_button = st.button("Create Reel", type="primary", use_container_width=True)
     
@@ -116,10 +126,10 @@ if create_button:
         # Show loading spinner
         with st.spinner(f"Creating your reel in {resolution}... Please wait..."):
             try:
-                # Make API request with resolution
+                # Make API request with resolution and background color
                 response = requests.post(
                     f"{API_URL}/api/create-reel",
-                    json={"url": url_input, "resolution": resolution},
+                    json={"url": url_input, "resolution": resolution, "background_color": background_color.lower()},
                     timeout=config.MAX_PROCESSING_TIMEOUT
                 )
                 
