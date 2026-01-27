@@ -149,6 +149,7 @@ class ReelGenerator:
             
             # Try using yt-dlp with --no-check-certificate and ignore errors for metadata only
             try:
+                logger.info("Attempting yt-dlp metadata extraction for non-video tweet...")
                 result = subprocess.run(
                     ["yt-dlp", "--dump-json", "--skip-download", "--no-check-certificate", "--ignore-errors", url],
                     capture_output=True,
@@ -156,49 +157,94 @@ class ReelGenerator:
                     timeout=30
                 )
                 
-                if result.stdout:
-                    data = json.loads(result.stdout)
+                logger.info(f"yt-dlp exit code: {result.returncode}")
+                logger.info(f"yt-dlp stdout length: {len(result.stdout)}")
+                if result.stderr:
+                    logger.warning(f"yt-dlp stderr: {result.stderr[:500]}")
+                
+                if result.stdout and result.stdout.strip():
+                    try:
+                        data = json.loads(result.stdout)
+                        logger.info(f"Successfully parsed JSON. Keys: {list(data.keys())[:20]}")
+                        
+                        # Extract images if available - try multiple fields
+                        images = []
+                        
+                        # Method 1: Check thumbnails
+                        thumbnails = data.get('thumbnails', [])
+                        logger.info(f"Found {len(thumbnails)} thumbnails")
+                        if thumbnails:
+                            for thumb in thumbnails:
+                                url_val = thumb.get('url', '')
+                                if url_val and 'pbs.twimg.com' in url_val:
+                                    # Convert to larger size if possible
+                                    if ':small' in url_val:
+                                        url_val = url_val.replace(':small', ':large')
+                                    elif ':thumb' in url_val:
+                                        url_val = url_val.replace(':thumb', ':large')
+                                    images.append(url_val)
+                                    logger.info(f"Added image from thumbnail: {url_val[:80]}")
+                        
+                        # Method 2: Check for direct image URLs in various fields
+                        for field in ['thumbnail', 'image', 'thumbnail_url']:
+                            if field in data and data[field]:
+                                url_val = data[field]
+                                if 'pbs.twimg.com' in url_val and url_val not in images:
+                                    images.append(url_val)
+                                    logger.info(f"Added image from {field}: {url_val[:80]}")
+                        
+                        # Get caption - try multiple fields
+                        caption = (
+                            data.get('description') or 
+                            data.get('title') or 
+                            data.get('alt_title') or
+                            data.get('fulltitle') or
+                            ''
+                        )
+                        logger.info(f"Extracted caption: {caption[:100] if caption else 'None'}")
+                        
+                        # Get avatar URL
+                        avatar_url = (
+                            data.get("uploader_avatar") or 
+                            data.get("channel_avatar") or 
+                            data.get("avatar") or
+                            data.get("thumbnail")
+                        )
+                        
+                        metadata = {
+                            "username": data.get("uploader_id", username),
+                            "display_name": data.get("uploader", username),
+                            "caption": self._truncate_caption(caption) if caption else f"Post by @{username}",
+                            "avatar_url": avatar_url if avatar_url else f"https://twitter.com/{username}",
+                            "likes": data.get("like_count", 0) or 0,
+                            "retweets": data.get("repost_count", 0) or 0,
+                            "comments": data.get("comment_count", 0) or 0,
+                            "views": data.get("view_count", 0) or 0,
+                            "timestamp": self._format_timestamp(data.get("upload_date", "")),
+                            "post_url": url,
+                            "post_id": post_id,
+                            "has_video": False,
+                            "images": images[:4]  # Max 4 images
+                        }
+                        
+                        logger.info(f"✓ Fallback extraction successful - Caption: {len(metadata['caption'])} chars, Images: {len(images)}")
+                        return metadata
                     
-                    # Extract images if available
-                    images = []
-                    thumbnails = data.get('thumbnails', [])
-                    if thumbnails:
-                        # Get the highest quality thumbnail
-                        for thumb in thumbnails:
-                            if thumb.get('url') and 'pbs.twimg.com' in thumb.get('url', ''):
-                                images.append(thumb['url'])
-                    
-                    # Get caption
-                    caption = data.get('description', '') or data.get('title', '')
-                    
-                    metadata = {
-                        "username": data.get("uploader_id", username),
-                        "display_name": data.get("uploader", username),
-                        "caption": self._truncate_caption(caption),
-                        "avatar_url": data.get("uploader_url", f"https://twitter.com/{username}"),
-                        "likes": data.get("like_count", 0) or 0,
-                        "retweets": data.get("repost_count", 0) or 0,
-                        "comments": data.get("comment_count", 0) or 0,
-                        "views": data.get("view_count", 0) or 0,
-                        "timestamp": self._format_timestamp(data.get("upload_date", "")),
-                        "post_url": url,
-                        "post_id": post_id,
-                        "has_video": False,
-                        "images": images[:4]  # Max 4 images
-                    }
-                    
-                    logger.info(f"Fallback extraction successful - Found {len(images)} images")
-                    return metadata
+                    except json.JSONDecodeError as je:
+                        logger.error(f"Failed to parse yt-dlp JSON output: {je}")
+                        logger.error(f"Output was: {result.stdout[:500]}")
                     
             except Exception as e:
-                logger.warning(f"yt-dlp fallback also failed: {e}")
+                logger.warning(f"yt-dlp fallback failed with exception: {e}")
             
-            # Final fallback - return basic metadata
-            logger.info("Using minimal metadata - will create basic screenshot")
+            # Final fallback - return basic metadata with note to check URL
+            logger.warning("⚠ Using minimal metadata - actual tweet content may not be available")
+            logger.warning(f"⚠ URL: {url}")
+            logger.warning("⚠ This might be due to: rate limiting, private account, or deleted tweet")
             return {
                 "username": username,
                 "display_name": username,
-                "caption": f"Tweet from @{username}",
+                "caption": f"Content from @{username} (Details unavailable - check if account is public)",
                 "avatar_url": f"https://twitter.com/{username}",
                 "likes": 0,
                 "retweets": 0,
