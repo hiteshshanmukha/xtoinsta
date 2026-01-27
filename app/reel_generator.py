@@ -922,6 +922,7 @@ class ReelGenerator:
     def create_tweet_screenshot(self, avatar_img: Optional[Image.Image], metadata: Dict, background_color: str = "white") -> Optional[Path]:
         """
         Create a stylized screenshot of a tweet (for text-only or image tweets).
+        Layout matches video overlay: avatar -> name/id -> caption -> image (if exists)
         
         Args:
             avatar_img: PIL Image of circular avatar (or None).
@@ -940,184 +941,235 @@ class ReelGenerator:
             
             # Background color
             bg_color = (255, 255, 255) if background_color.lower() == "white" else (0, 0, 0)
-            text_color = (0, 0, 0) if background_color.lower() == "white" else (255, 255, 255)
-            gray_color = (120, 120, 120) if background_color.lower() == "white" else (180, 180, 180)
+            text_color = (0, 0, 0, 255) if background_color.lower() == "white" else (255, 255, 255, 255)
+            gray_color = (120, 120, 120, 255) if background_color.lower() == "white" else (180, 180, 180, 255)
             
-            # Create image
-            img = Image.new('RGB', (width, height), bg_color)
+            # Create image with RGBA to support emoji images
+            img = Image.new('RGBA', (width, height), bg_color + (255,))
             draw = ImageDraw.Draw(img)
             
-            # Load fonts
+            # Load fonts - same as video overlay
             try:
-                display_font = ImageFont.truetype("/usr/share/fonts/truetype/roboto/Roboto-Bold.ttf", 32)
-                username_font = ImageFont.truetype("/usr/share/fonts/truetype/roboto/Roboto-Regular.ttf", 26)
-                caption_font = ImageFont.truetype("/usr/share/fonts/truetype/roboto/Roboto-Regular.ttf", 32)
-                metrics_font = ImageFont.truetype("/usr/share/fonts/truetype/roboto/Roboto-Regular.ttf", 24)
-                timestamp_font = ImageFont.truetype("/usr/share/fonts/truetype/roboto/Roboto-Regular.ttf", 22)
+                # Try to load fonts similar to video overlay
+                font_paths_priority = [
+                    ("/usr/share/fonts/truetype/roboto/Roboto-Bold.ttf", "/usr/share/fonts/truetype/roboto/Roboto-Regular.ttf"),
+                    ("/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf", "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"),
+                    ("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"),
+                    ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+                ]
+                
+                font_loaded = False
+                for bold_path, regular_path in font_paths_priority:
+                    try:
+                        display_font = ImageFont.truetype(bold_path, 26)
+                        username_font = ImageFont.truetype(regular_path, 22)
+                        caption_font = ImageFont.truetype(regular_path, 28)
+                        logger.info(f"Loaded fonts: {bold_path}, {regular_path}")
+                        font_loaded = True
+                        break
+                    except:
+                        continue
+                
+                if not font_loaded:
+                    raise Exception("No suitable fonts found")
             except:
                 # Fallback
+                logger.warning("Could not load preferred fonts, using default")
                 display_font = ImageFont.load_default()
                 username_font = display_font
                 caption_font = display_font
-                metrics_font = display_font
-                timestamp_font = display_font
             
-            # Position elements
-            margin = 80
-            y_pos = 200
+            # MATCH VIDEO LAYOUT: Avatar -> Name/ID -> Caption -> Image
+            # Start position similar to video
+            horizontal_margin = 100  # Same as video
+            available_width = width - (2 * horizontal_margin)
             
-            # Draw avatar if available
+            # Starting Y position
+            start_y = 200
+            current_y = start_y
+            
+            # === AVATAR ===
+            avatar_x = horizontal_margin
             if avatar_img:
-                avatar_x = margin
-                avatar_y = y_pos
+                avatar_y = current_y
                 img.paste(avatar_img, (avatar_x, avatar_y), avatar_img)
-                text_start_x = avatar_x + avatar_img.width + 15
-                y_pos_text = avatar_y + 10
+                logger.info(f"Avatar pasted at ({avatar_x}, {avatar_y})")
+                
+                # Text next to avatar
+                text_x = avatar_x + avatar_img.width + 12
+                text_y = avatar_y + 5
+                
+                # Display name (bold)
+                self._draw_text_with_emoji_images(img, metadata['display_name'], (text_x, text_y), 
+                                                  display_font, text_color)
+                
+                # Username below display name (gray)
+                username_text = f"@{metadata['username']}"
+                draw.text((text_x, text_y + 30), username_text, fill=gray_color, font=username_font)
+                
+                # Move Y position below avatar
+                current_y = avatar_y + avatar_img.width + 20
             else:
-                text_start_x = margin
-                y_pos_text = y_pos
+                # No avatar - just show text
+                text_x = avatar_x
+                text_y = current_y
+                
+                # Display name (bold)
+                self._draw_text_with_emoji_images(img, metadata['display_name'], (text_x, text_y), 
+                                                  display_font, text_color)
+                
+                # Username below display name (gray)
+                username_text = f"@{metadata['username']}"
+                draw.text((text_x, text_y + 30), username_text, fill=gray_color, font=username_font)
+                
+                # Move Y position
+                current_y = text_y + 70
             
-            # Draw display name
-            draw.text((text_start_x, y_pos_text), metadata['display_name'], fill=text_color, font=display_font)
-            
-            # Draw username
-            draw.text((text_start_x, y_pos_text + 40), f"@{metadata['username']}", fill=gray_color, font=username_font)
-            
-            # Draw caption below avatar
-            caption_y = y_pos + (avatar_img.height if avatar_img else 0) + 40
+            # === CAPTION ===
             caption_text = metadata.get('caption', '')
+            caption_x = horizontal_margin
+            caption_y = current_y + 30
             
             if caption_text:
-                # Wrap text
-                max_width = width - (2 * margin)
-                words = caption_text.split()
-                lines = []
-                current_line = ""
+                logger.info("Drawing caption with emoji support")
+                # Multi-line caption support with emoji
+                self._draw_multiline_text_with_emoji_images(
+                    img,
+                    caption_text,
+                    (caption_x, caption_y),
+                    caption_font,
+                    text_color,
+                    available_width
+                )
                 
-                for word in words:
-                    test_line = current_line + (" " if current_line else "") + word
-                    bbox = draw.textbbox((0, 0), test_line, font=caption_font)
-                    if bbox[2] - bbox[0] <= max_width:
-                        current_line = test_line
+                # Estimate caption height
+                import re
+                parts = re.split(r'( +)', caption_text)
+                temp_draw = ImageDraw.Draw(img)
+                lines_count = 1
+                current_line_parts = []
+                
+                for part in parts:
+                    test_line = ''.join(current_line_parts + [part])
+                    bbox = temp_draw.textbbox((0, 0), test_line, font=caption_font)
+                    if bbox[2] - bbox[0] <= available_width:
+                        current_line_parts.append(part)
                     else:
-                        if current_line:
-                            lines.append(current_line)
-                        current_line = word
+                        if current_line_parts:
+                            lines_count += 1
+                        current_line_parts = [part] if part.strip() else []
                 
-                if current_line:
-                    lines.append(current_line)
-                
-                # Draw wrapped text
-                line_height = 45
-                for line in lines[:12]:  # Max 12 lines
-                    draw.text((margin, caption_y), line, fill=text_color, font=caption_font)
-                    caption_y += line_height
+                caption_height = min(lines_count, 6) * 38  # Max 6 lines, 38px per line
+                current_y = caption_y + caption_height + 30
             
-            # Download and display tweet images if available
+            # === IMAGE (if available) ===
             images = metadata.get('images', [])
-            image_y = caption_y + 40
             
             if images:
-                logger.info(f"Downloading {len(images)} tweet images...")
-                available_width = width - (2 * margin)
+                logger.info(f"Processing {len(images)} tweet images...")
+                image_y = current_y + 20
                 
                 if len(images) == 1:
-                    # Single image - larger display
+                    # Single image - centered, like video
+                    try:
+                        img_response = requests.get(images[0], timeout=10)
+                        tweet_img = Image.open(io.BytesIO(img_response.content))
+                        
+                        # Resize to fit within available space
+                        max_img_width = available_width
+                        max_img_height = 800
+                        
+                        # Calculate size maintaining aspect ratio
+                        aspect = tweet_img.width / tweet_img.height
+                        if tweet_img.width > max_img_width or tweet_img.height > max_img_height:
+                            if aspect > (max_img_width / max_img_height):
+                                new_width = max_img_width
+                                new_height = int(new_width / aspect)
+                            else:
+                                new_height = max_img_height
+                                new_width = int(new_height * aspect)
+                        else:
+                            new_width = tweet_img.width
+                            new_height = tweet_img.height
+                        
+                        tweet_img = tweet_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                        
+                        # Center the image horizontally
+                        img_x = horizontal_margin + (available_width - new_width) // 2
+                        
+                        # Apply rounded corners like video
+                        tweet_img_rounded = self._apply_rounded_corners_to_image(tweet_img, radius=20)
+                        
+                        img.paste(tweet_img_rounded, (img_x, image_y), tweet_img_rounded if tweet_img_rounded.mode == 'RGBA' else None)
+                        logger.info(f"Image pasted at ({img_x}, {image_y}) with size {new_width}x{new_height}")
+                        
+                    except Exception as e:
+                        logger.warning(f"Failed to download image: {e}")
+                
+                elif len(images) >= 2:
+                    # Multiple images - show first one centered (can be enhanced later)
                     try:
                         img_response = requests.get(images[0], timeout=10)
                         tweet_img = Image.open(io.BytesIO(img_response.content))
                         
                         # Resize to fit
-                        max_img_height = 600
+                        max_img_width = available_width
+                        max_img_height = 800
                         aspect = tweet_img.width / tweet_img.height
-                        new_width = min(available_width, int(max_img_height * aspect))
-                        new_height = int(new_width / aspect)
+                        
+                        if aspect > (max_img_width / max_img_height):
+                            new_width = max_img_width
+                            new_height = int(new_width / aspect)
+                        else:
+                            new_height = max_img_height
+                            new_width = int(new_height * aspect)
                         
                         tweet_img = tweet_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
                         
                         # Center the image
-                        img_x = margin + (available_width - new_width) // 2
-                        img.paste(tweet_img, (img_x, image_y))
-                        image_y += new_height + 40
-                    except Exception as e:
-                        logger.warning(f"Failed to download image: {e}")
-                
-                elif len(images) == 2:
-                    # Two images side by side
-                    img_width = (available_width - 20) // 2
-                    try:
-                        for i, img_url in enumerate(images[:2]):
-                            img_response = requests.get(img_url, timeout=10)
-                            tweet_img = Image.open(io.BytesIO(img_response.content))
-                            
-                            # Make square
-                            tweet_img = tweet_img.resize((img_width, img_width), Image.Resampling.LANCZOS)
-                            
-                            img_x = margin + (i * (img_width + 20))
-                            img.paste(tweet_img, (img_x, image_y))
+                        img_x = horizontal_margin + (available_width - new_width) // 2
                         
-                        image_y += img_width + 40
-                    except Exception as e:
-                        logger.warning(f"Failed to download images: {e}")
-                
-                elif len(images) >= 3:
-                    # Grid layout for 3-4 images
-                    img_size = (available_width - 20) // 2
-                    try:
-                        for i, img_url in enumerate(images[:4]):
-                            img_response = requests.get(img_url, timeout=10)
-                            tweet_img = Image.open(io.BytesIO(img_response.content))
-                            
-                            # Make square
-                            tweet_img = tweet_img.resize((img_size, img_size), Image.Resampling.LANCZOS)
-                            
-                            row = i // 2
-                            col = i % 2
-                            img_x = margin + (col * (img_size + 20))
-                            img_y = image_y + (row * (img_size + 20))
-                            img.paste(tweet_img, (img_x, img_y))
+                        # Apply rounded corners
+                        tweet_img_rounded = self._apply_rounded_corners_to_image(tweet_img, radius=20)
                         
-                        rows = (len(images[:4]) + 1) // 2
-                        image_y += (rows * (img_size + 20)) + 20
+                        img.paste(tweet_img_rounded, (img_x, image_y), tweet_img_rounded if tweet_img_rounded.mode == 'RGBA' else None)
+                        logger.info(f"First image pasted at ({img_x}, {image_y}) - {len(images)} images available")
+                        
                     except Exception as e:
                         logger.warning(f"Failed to download images: {e}")
             
-            # Draw timestamp
-            timestamp_y = image_y + 20
-            draw.text((margin, timestamp_y), metadata.get('timestamp', ''), fill=gray_color, font=timestamp_font)
-            
-            # Draw metrics at bottom
-            metrics_y = height - 250
-            metrics_x = margin
-            
-            # Likes, retweets, comments
-            metrics_spacing = 180
-            metrics_data = [
-                (f"❤ {self._format_count(metadata.get('likes', 0))}", "Likes"),
-                (f"🔁 {self._format_count(metadata.get('retweets', 0))}", "Retweets"),
-                (f"💬 {self._format_count(metadata.get('comments', 0))}", "Comments"),
-            ]
-            
-            for i, (metric_text, label) in enumerate(metrics_data):
-                x = metrics_x + (i * metrics_spacing)
-                draw.text((x, metrics_y), metric_text, fill=text_color, font=metrics_font)
-                draw.text((x, metrics_y + 35), label, fill=gray_color, font=timestamp_font)
-            
-            # Add X logo watermark
-            watermark_y = height - 100
-            draw.text((margin, watermark_y), "𝕏 / Twitter", fill=gray_color, font=timestamp_font)
+            # Convert back to RGB for saving as PNG/JPEG
+            final_img = Image.new('RGB', (width, height), bg_color)
+            final_img.paste(img, (0, 0), img)
             
             # Save screenshot
             post_id = metadata.get('post_id', 'unknown')
             output_path = self.output_dir / f"tweet_{post_id}.png"
-            img.save(output_path, 'PNG', quality=95)
+            final_img.save(output_path, 'PNG', quality=95)
             
             logger.info(f"✓ Tweet screenshot created: {output_path}")
             return output_path
             
         except Exception as e:
-            logger.error(f"Failed to create tweet screenshot: {e}")
+            logger.error(f"Failed to create tweet screenshot: {e}", exc_info=True)
             return None
+    
+    def _apply_rounded_corners_to_image(self, img: Image.Image, radius: int = 20) -> Image.Image:
+        """Apply rounded corners to a PIL Image."""
+        # Create a mask with rounded corners
+        mask = Image.new('L', img.size, 0)
+        draw = ImageDraw.Draw(mask)
+        draw.rounded_rectangle([(0, 0), img.size], radius=radius, fill=255)
+        
+        # Apply mask
+        output = Image.new('RGBA', img.size, (0, 0, 0, 0))
+        if img.mode == 'RGBA':
+            output.paste(img, (0, 0))
+        else:
+            output.paste(img.convert('RGBA'), (0, 0))
+        output.putalpha(mask)
+        
+        return output
     
     def create_reel_from_url(self, url: str, resolution: str = "720p", background_color: str = "white") -> Tuple[Optional[Path], dict]:
         """
