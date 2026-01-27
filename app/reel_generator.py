@@ -147,7 +147,85 @@ class ReelGenerator:
             username_match = re.search(r'x\.com/([^/]+)/', url) or re.search(r'twitter\.com/([^/]+)/', url)
             username = username_match.group(1) if username_match else "unknown"
             
-            # Try using yt-dlp with --no-check-certificate and ignore errors for metadata only
+            # Try using gallery-dl for image/text tweets (better than yt-dlp for non-video content)
+            try:
+                logger.info("Attempting gallery-dl metadata extraction for non-video tweet...")
+                result = subprocess.run(
+                    ["gallery-dl", "--dump-json", "--no-download", url],
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                
+                logger.info(f"gallery-dl exit code: {result.returncode}")
+                if result.stderr:
+                    logger.warning(f"gallery-dl stderr: {result.stderr[:500]}")
+                
+                if result.returncode == 0 and result.stdout and result.stdout.strip():
+                    try:
+                        # gallery-dl returns one JSON object per line
+                        lines = [line for line in result.stdout.strip().split('\n') if line.strip()]
+                        logger.info(f"gallery-dl returned {len(lines)} JSON objects")
+                        
+                        images = []
+                        caption = ""
+                        display_name = username
+                        tweet_data = None
+                        
+                        for line in lines:
+                            try:
+                                data = json.loads(line)
+                                logger.info(f"Parsed JSON object with keys: {list(data.keys())[:15]}")
+                                
+                                # First object usually has tweet metadata
+                                if not tweet_data and 'content' in data:
+                                    tweet_data = data
+                                    caption = data.get('content', '')
+                                    display_name = data.get('author', {}).get('name', username)
+                                    logger.info(f"Found tweet metadata - caption length: {len(caption)}")
+                                
+                                # Extract image URL if present
+                                if 'url' in data and 'pbs.twimg.com' in data['url']:
+                                    img_url = data['url']
+                                    # Try to get original quality
+                                    if '?format=' in img_url and '&name=' in img_url:
+                                        # Replace with largest size
+                                        img_url = re.sub(r'&name=\w+', '&name=large', img_url)
+                                    images.append(img_url)
+                                    logger.info(f"Added image: {img_url[:80]}")
+                                
+                            except json.JSONDecodeError:
+                                continue
+                        
+                        if tweet_data or images:
+                            metadata = {
+                                "username": username,
+                                "display_name": display_name,
+                                "caption": self._truncate_caption(caption) if caption else f"Post by @{username}",
+                                "avatar_url": f"https://twitter.com/{username}",
+                                "likes": tweet_data.get("favorite_count", 0) if tweet_data else 0,
+                                "retweets": tweet_data.get("retweet_count", 0) if tweet_data else 0,
+                                "comments": tweet_data.get("reply_count", 0) if tweet_data else 0,
+                                "views": 0,
+                                "timestamp": self._format_timestamp(tweet_data.get("date", "")[:8]) if tweet_data and tweet_data.get("date") else datetime.now().strftime("%b %d, %Y"),
+                                "post_url": url,
+                                "post_id": post_id,
+                                "has_video": False,
+                                "images": images[:4]  # Max 4 images
+                            }
+                            
+                            logger.info(f"✓ gallery-dl extraction successful - Caption: {len(metadata['caption'])} chars, Images: {len(images)}")
+                            return metadata
+                        
+                    except Exception as e:
+                        logger.error(f"Failed to parse gallery-dl output: {e}")
+                    
+            except FileNotFoundError:
+                logger.warning("gallery-dl not found, trying yt-dlp as fallback...")
+            except Exception as e:
+                logger.warning(f"gallery-dl failed with exception: {e}")
+            
+            # Try yt-dlp as secondary fallback
             try:
                 logger.info("Attempting yt-dlp metadata extraction for non-video tweet...")
                 result = subprocess.run(
@@ -227,7 +305,7 @@ class ReelGenerator:
                             "images": images[:4]  # Max 4 images
                         }
                         
-                        logger.info(f"✓ Fallback extraction successful - Caption: {len(metadata['caption'])} chars, Images: {len(images)}")
+                        logger.info(f"✓ yt-dlp fallback extraction successful - Caption: {len(metadata['caption'])} chars, Images: {len(images)}")
                         return metadata
                     
                     except json.JSONDecodeError as je:
