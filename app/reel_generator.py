@@ -170,55 +170,103 @@ class ReelGenerator:
                         images = []
                         caption = ""
                         display_name = username
-                        tweet_data = None
+                        likes = 0
+                        retweets = 0
+                        replies = 0
+                        date_str = ""
+                        found_tweet_data = False
                         
-                        for line in lines:
+                        for i, line in enumerate(lines):
                             try:
                                 data = json.loads(line)
-                                logger.info(f"Parsed JSON object with keys: {list(data.keys())[:15]}")
                                 
-                                # First object usually has tweet metadata
-                                if not tweet_data and 'content' in data:
-                                    tweet_data = data
-                                    caption = data.get('content', '')
-                                    display_name = data.get('author', {}).get('name', username)
-                                    logger.info(f"Found tweet metadata - caption length: {len(caption)}")
+                                # Log first object structure for debugging
+                                if i == 0:
+                                    logger.info(f"First JSON object keys: {list(data.keys())}")
+                                
+                                # Check for tweet content (text)
+                                if 'content' in data and data['content']:
+                                    if not caption or len(data['content']) > len(caption):
+                                        caption = data['content']
+                                        found_tweet_data = True
+                                        logger.info(f"Found caption: {caption[:80]}...")
+                                
+                                # Extract author info
+                                if 'author' in data:
+                                    author = data['author']
+                                    if isinstance(author, dict):
+                                        if 'name' in author:
+                                            display_name = author['name']
+                                        if 'nick' in author:
+                                            username = author['nick']
+                                
+                                # Extract engagement metrics
+                                if 'favorite_count' in data:
+                                    likes = max(likes, data.get('favorite_count', 0))
+                                if 'quote_count' in data:
+                                    retweets = max(retweets, data.get('quote_count', 0) + data.get('retweet_count', 0))
+                                if 'reply_count' in data:
+                                    replies = max(replies, data.get('reply_count', 0))
+                                
+                                # Extract date
+                                if 'date' in data and not date_str:
+                                    date_str = str(data['date'])[:8]  # YYYYMMDD format
                                 
                                 # Extract image URL if present
-                                if 'url' in data and 'pbs.twimg.com' in data['url']:
+                                if 'url' in data:
                                     img_url = data['url']
-                                    # Try to get original quality
-                                    if '?format=' in img_url and '&name=' in img_url:
-                                        # Replace with largest size
-                                        img_url = re.sub(r'&name=\w+', '&name=large', img_url)
-                                    images.append(img_url)
-                                    logger.info(f"Added image: {img_url[:80]}")
+                                    # Only add if it's an image URL
+                                    if isinstance(img_url, str) and ('pbs.twimg.com' in img_url or 'twimg.com/media' in img_url):
+                                        # Try to get original quality
+                                        if '?format=' in img_url and '&name=' in img_url:
+                                            img_url = re.sub(r'&name=\w+', '&name=orig', img_url)
+                                        if img_url not in images:
+                                            images.append(img_url)
+                                            logger.info(f"Added image {len(images)}: {img_url[:80]}")
                                 
-                            except json.JSONDecodeError:
+                                # Alternative: check for filename (image files)
+                                if 'filename' in data and 'extension' in data:
+                                    ext = data.get('extension', '').lower()
+                                    if ext in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
+                                        if 'url' in data and data['url'] not in images:
+                                            images.append(data['url'])
+                                            logger.info(f"Added image from filename: {data['url'][:80]}")
+                                
+                            except json.JSONDecodeError as je:
+                                logger.warning(f"Failed to parse JSON line {i}: {je}")
+                                continue
+                            except Exception as e:
+                                logger.warning(f"Error processing JSON line {i}: {e}")
                                 continue
                         
-                        if tweet_data or images:
+                        # If we found any data, return it
+                        if found_tweet_data or images:
                             metadata = {
                                 "username": username,
                                 "display_name": display_name,
                                 "caption": self._truncate_caption(caption) if caption else f"Post by @{username}",
                                 "avatar_url": f"https://twitter.com/{username}",
-                                "likes": tweet_data.get("favorite_count", 0) if tweet_data else 0,
-                                "retweets": tweet_data.get("retweet_count", 0) if tweet_data else 0,
-                                "comments": tweet_data.get("reply_count", 0) if tweet_data else 0,
+                                "likes": likes,
+                                "retweets": retweets,
+                                "comments": replies,
                                 "views": 0,
-                                "timestamp": self._format_timestamp(tweet_data.get("date", "")[:8]) if tweet_data and tweet_data.get("date") else datetime.now().strftime("%b %d, %Y"),
+                                "timestamp": self._format_timestamp(date_str) if date_str else datetime.now().strftime("%b %d, %Y"),
                                 "post_url": url,
                                 "post_id": post_id,
                                 "has_video": False,
                                 "images": images[:4]  # Max 4 images
                             }
                             
-                            logger.info(f"✓ gallery-dl extraction successful - Caption: {len(metadata['caption'])} chars, Images: {len(images)}")
+                            logger.info(f"✓ gallery-dl extraction successful!")
+                            logger.info(f"  Caption: {len(metadata['caption'])} chars")
+                            logger.info(f"  Images: {len(images)}")
+                            logger.info(f"  Display name: {display_name}")
                             return metadata
+                        else:
+                            logger.warning("gallery-dl returned data but couldn't extract tweet content or images")
                         
                     except Exception as e:
-                        logger.error(f"Failed to parse gallery-dl output: {e}")
+                        logger.error(f"Failed to parse gallery-dl output: {e}", exc_info=True)
                     
             except FileNotFoundError:
                 logger.warning("gallery-dl not found, trying yt-dlp as fallback...")
