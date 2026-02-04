@@ -35,7 +35,8 @@ def index():
 @app.route('/api/create-reel', methods=['POST'])
 def create_reel():
     """
-    Create an Instagram Reel from X/Twitter post URL.
+    Create an Instagram Reel from X/Twitter video post URL.
+    Only supports tweets with video content.
     
     Request body:
         {
@@ -82,8 +83,8 @@ def create_reel():
             "post_id": metadata.get('post_id', 'unknown'),
             "username": metadata.get('username', 'unknown'),
             "file": filename,
-            "content_type": metadata.get('content_type', 'video'),  # 'video' or 'image'
-            "message": "Content created successfully",
+            "content_type": "video",
+            "message": "Video reel created successfully",
             "metadata": {
                 "username": metadata.get('username'),
                 "display_name": metadata.get('display_name'),
@@ -109,10 +110,10 @@ def create_reel():
 @app.route('/api/download-reel/<filename>', methods=['GET'])
 def download_reel(filename):
     """
-    Download a generated file (video or image).
+    Download a generated video reel file.
     
     Args:
-        filename: Name of the file (e.g., 'reel_1234567890.mp4' or 'tweet_1234567890.png')
+        filename: Name of the file (e.g., 'reel_1234567890.mp4')
     
     Returns:
         The file or 404 if not found
@@ -122,9 +123,9 @@ def download_reel(filename):
         if '..' in filename or '/' in filename or '\\' in filename:
             return jsonify({"error": "Invalid filename"}), 400
         
-        # Accept both MP4 and PNG files
-        if not (filename.endswith('.mp4') or filename.endswith('.png')):
-            return jsonify({"error": "Only MP4 and PNG files can be downloaded"}), 400
+        # Only accept MP4 files
+        if not filename.endswith('.mp4'):
+            return jsonify({"error": "Only MP4 video files can be downloaded"}), 400
         
         file_path = config.DOWNLOADS_DIR / filename
         
@@ -132,13 +133,10 @@ def download_reel(filename):
             logger.warning(f"File not found: {filename}")
             return jsonify({"error": "File not found"}), 404
         
-        # Determine MIME type based on extension
-        mimetype = 'video/mp4' if filename.endswith('.mp4') else 'image/png'
-        
         logger.info(f"Serving file: {filename}")
         return send_file(
             file_path,
-            mimetype=mimetype,
+            mimetype='video/mp4',
             as_attachment=True,
             download_name=filename
         )

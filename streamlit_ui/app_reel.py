@@ -11,7 +11,7 @@ import config
 
 # Page configuration
 st.set_page_config(
-    page_title="X to Instagram Content Converter",
+    page_title="X to Instagram Reel Converter",
     layout="wide"
 )
 
@@ -51,9 +51,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Header
-st.markdown('<div class="main-header">X to Instagram Content Converter</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">X to Instagram Reel Converter</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="subtitle">Transform X/Twitter posts into Instagram-ready content: Reels for videos, Screenshots for text/images</div>',
+    '<div class="subtitle">Transform X/Twitter video posts into vertical Instagram Reels</div>',
     unsafe_allow_html=True
 )
 
@@ -62,7 +62,7 @@ col1, col2, col3 = st.columns([1, 2, 1])
 
 with col2:
     # URL input
-    st.markdown("### Enter X/Twitter Post URL")
+    st.markdown("### Enter X/Twitter Video Post URL")
     url_input = st.text_input(
         "URL",
         placeholder="https://x.com/username/status/1234567890",
@@ -90,23 +90,22 @@ with col2:
     st.caption(f"Background: **{background_color}**")
     
     # Create button
-    create_button = st.button("Create Content", type="primary", use_container_width=True)
+    create_button = st.button("Create Reel", type="primary", use_container_width=True)
     
     # Instructions
     with st.expander("How to use"):
         st.markdown("""
-        1. Find any X/Twitter post (text, image, or video)
+        1. Find any X/Twitter post **with video content**
         2. Copy the post URL (e.g., `https://x.com/username/status/1234567890`)
-        3. Select video quality (only applies to video posts)
-        4. Choose background color (black or white)
-        5. Click "Create Content"
-        6. Download your content!
+        3. Select video quality (lower quality = faster processing)
+        4. Choose background color (white or black)
+        5. Click "Create Reel"
+        6. Wait for processing (1-3 minutes depending on video length)
+        7. Download your Instagram-ready vertical reel
         
-        **What you get:**
-        - **Video posts**: Vertical Instagram Reel (MP4) with post context
-        - **Text/Image posts**: Stylized screenshot (PNG) perfect for Instagram Stories
+        **Note:** Only video tweets are supported. Text-only or image-only tweets will not work.
         
-        **Resolution Guide (for videos):**
+        **Resolution Guide:**
         - **360p**: Fastest (15-30 seconds) - Good for quick sharing
         - **480p**: Fast (30-60 seconds) - Balanced quality/speed
         - **720p**: Recommended (60-90 seconds) - Great quality
@@ -120,19 +119,17 @@ if 'metadata' not in st.session_state:
     st.session_state.metadata = None
 if 'filename' not in st.session_state:
     st.session_state.filename = None
-if 'content_type' not in st.session_state:
-    st.session_state.content_type = None
 
 # Process reel creation
 if create_button:
     if not url_input:
-        st.error("Please enter an X/Twitter URL")
+        st.error("Please enter an X/Twitter video post URL")
     elif not (url_input.startswith('https://x.com/') or url_input.startswith('https://twitter.com/')):
         st.error("Invalid URL format. Please enter a valid X/Twitter post URL")
     else:
         # Show loading spinner
         estimated_time = "15-30 seconds" if resolution == "360p" else "30-60 seconds" if resolution == "480p" else "60-90 seconds" if resolution == "720p" else "2-3 minutes"
-        with st.spinner(f"Creating your content... This may take {estimated_time} for videos. Please wait..."):
+        with st.spinner(f"Creating your reel... This may take {estimated_time}. Please wait..."):
             try:
                 # Make API request with resolution and background color
                 response = requests.post(
@@ -145,7 +142,6 @@ if create_button:
                     result = response.json()
                     metadata = result.get('metadata', {})
                     filename = result.get('file')
-                    content_type = result.get('content_type', 'video')  # 'video' or 'image'
                     
                     # Fetch the file
                     download_response = requests.get(
@@ -158,9 +154,8 @@ if create_button:
                         st.session_state.file_data = download_response.content
                         st.session_state.metadata = metadata
                         st.session_state.filename = filename
-                        st.session_state.content_type = content_type
                         
-                        st.success(f"{'Reel' if content_type == 'video' else 'Screenshot'} created successfully!")
+                        st.success("Video reel created successfully!")
                     else:
                         st.error(f"Failed to fetch file: {download_response.status_code}")
                 
@@ -174,6 +169,7 @@ if create_button:
                     with st.expander("Troubleshooting"):
                         st.markdown("""
                         **Common issues:**
+                        - **Only video tweets are supported** - This tool does not work with text-only or image-only tweets
                         - Make sure the X/Twitter post is public
                         - Verify the post contains a video
                         - Check that the URL is correct
@@ -183,7 +179,7 @@ if create_button:
                         **Still having issues?**
                         - Check the backend logs in `logs/app.log`
                         - Verify the Flask API is running
-                        - Try a different post URL
+                        - Try a different video post URL
                         """)
             
             except requests.Timeout:
@@ -207,12 +203,8 @@ if st.session_state.file_data:
     
     with col2:
         # File preview
-        st.markdown(f"### {'Video' if st.session_state.content_type == 'video' else 'Image'} Preview")
-        
-        if st.session_state.content_type == 'video':
-            st.video(st.session_state.file_data)
-        else:
-            st.image(st.session_state.file_data)
+        st.markdown("### Video Preview")
+        st.video(st.session_state.file_data)
         
         # Metadata display
         metadata = st.session_state.metadata
@@ -227,7 +219,7 @@ if st.session_state.file_data:
         with metric_cols[2]:
             st.metric("Resolution", "1080×1920")
         with metric_cols[3]:
-            st.metric("Format", st.session_state.content_type.upper())
+            st.metric("Format", "MP4")
         
         # Detailed metadata
         with st.expander("Post Details"):
@@ -270,7 +262,7 @@ if st.session_state.file_data:
         with upload_cols[0]:
             st.markdown("""
             **Instagram Reels:**
-            1. Download MP4
+            1. Download MP4 video
             2. Transfer to phone
             3. Instagram → Reel → Upload
             """)
@@ -278,7 +270,7 @@ if st.session_state.file_data:
         with upload_cols[1]:
             st.markdown("""
             **TikTok:**
-            1. Download MP4
+            1. Download MP4 video
             2. TikTok → + → Upload
             3. Post video
             """)
@@ -286,7 +278,7 @@ if st.session_state.file_data:
         with upload_cols[2]:
             st.markdown("""
             **YouTube Shorts:**
-            1. Download MP4
+            1. Download MP4 video
             2. YouTube → Create Short
             3. Upload & publish
             """)
@@ -296,6 +288,6 @@ if st.session_state.file_data:
 st.markdown("---")
 st.markdown(
     '<div style="text-align: center; color: #657786;">Made for content creators | '
-    'Respect copyright and X/Twitter Terms of Service</div>',
+    'Converts video tweets to vertical reels | Respect copyright and X/Twitter Terms of Service</div>',
     unsafe_allow_html=True
 )

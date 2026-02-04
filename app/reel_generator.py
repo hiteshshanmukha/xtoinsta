@@ -47,8 +47,8 @@ class ReelGenerator:
     
     def extract_metadata(self, url: str) -> Dict:
         """
-        Extract metadata from X/Twitter post using yt-dlp.
-        Falls back to basic extraction for non-video tweets.
+        Extract metadata from X/Twitter video post using yt-dlp.
+        Only works with tweets containing video.
         
         Args:
             url: X/Twitter post URL.
@@ -57,7 +57,7 @@ class ReelGenerator:
             Dictionary containing post metadata.
             
         Raises:
-            ValueError: If URL is invalid or metadata extraction fails.
+            ValueError: If URL is invalid, not a video tweet, or metadata extraction fails.
         """
         logger.info(f"Extracting metadata from URL: {url}")
         
@@ -73,6 +73,10 @@ class ReelGenerator:
             
             # Parse JSON response
             data = json.loads(result.stdout)
+            
+            # Check if this is a video tweet
+            if not data.get("duration") or data.get("duration", 0) <= 0:
+                raise ValueError("This tweet does not contain a video. Only video tweets are supported.")
             
             # Extract relevant fields
             # Try multiple fields for avatar URL
@@ -103,18 +107,16 @@ class ReelGenerator:
                 "timestamp": self._format_timestamp(data.get("upload_date", "")),
                 "post_url": url,
                 "post_id": data.get("id", "unknown"),
-                "has_video": data.get("duration") is not None and data.get("duration", 0) > 0,  # Check if has video
+                "has_video": True,
             }
             
-            logger.info(f"Successfully extracted metadata for post {metadata['post_id']}")
-            logger.info(f"Content type: {'Video' if metadata['has_video'] else 'Text/Image'}")
+            logger.info(f"Successfully extracted metadata for video post {metadata['post_id']}")
             return metadata
             
         except subprocess.CalledProcessError as e:
-            # yt-dlp failed - likely a non-video tweet, try fallback extraction
-            logger.warning(f"yt-dlp failed (likely non-video tweet): {e.stderr}")
-            logger.info("Attempting fallback metadata extraction...")
-            return self._extract_metadata_fallback(url)
+            error_msg = f"yt-dlp failed: {e.stderr}. This may not be a video tweet."
+            logger.error(error_msg)
+            raise ValueError("Only video tweets are supported. Please provide a tweet with video content.")
             
         except json.JSONDecodeError as e:
             error_msg = f"Failed to parse yt-dlp output: {e}"
@@ -124,287 +126,6 @@ class ReelGenerator:
             error_msg = f"Unexpected error extracting metadata: {e}"
             logger.error(error_msg)
             raise ValueError(error_msg)
-    
-    def _extract_metadata_fallback(self, url: str) -> Dict:
-        """
-        Fallback method to extract metadata from non-video tweets.
-        Uses alternative methods when yt-dlp fails.
-        
-        Args:
-            url: X/Twitter post URL.
-            
-        Returns:
-            Dictionary containing post metadata including images.
-        """
-        logger.info("Using fallback metadata extraction for non-video tweet")
-        
-        try:
-            # Extract post ID and username from URL
-            import re
-            match = re.search(r'/status/(\d+)', url)
-            post_id = match.group(1) if match else "unknown"
-            
-            username_match = re.search(r'x\.com/([^/]+)/', url) or re.search(r'twitter\.com/([^/]+)/', url)
-            username = username_match.group(1) if username_match else "unknown"
-            
-            # Try using gallery-dl for image/text tweets (better than yt-dlp for non-video content)
-            try:
-                logger.info("Attempting gallery-dl metadata extraction for non-video tweet...")
-                result = subprocess.run(
-                    ["gallery-dl", "--dump-json", "--no-download", url],
-                    capture_output=True,
-                    text=True,
-                    timeout=30
-                )
-                
-                logger.info(f"gallery-dl exit code: {result.returncode}")
-                if result.stderr:
-                    logger.warning(f"gallery-dl stderr: {result.stderr[:500]}")
-                
-                if result.returncode == 0 and result.stdout and result.stdout.strip():
-                    try:
-                        # gallery-dl returns one JSON object per line
-                        lines = [line for line in result.stdout.strip().split('\n') if line.strip()]
-                        logger.info(f"gallery-dl returned {len(lines)} JSON objects")
-                        
-                        images = []
-                        caption = ""
-                        display_name = username
-                        likes = 0
-                        retweets = 0
-                        replies = 0
-                        date_str = ""
-                        found_tweet_data = False
-                        
-                        for i, line in enumerate(lines):
-                            try:
-                                data = json.loads(line)
-                                
-                                # Log first object structure for debugging
-                                if i == 0:
-                                    logger.info(f"First JSON object keys: {list(data.keys())}")
-                                
-                                # Check for tweet content (text)
-                                if 'content' in data and data['content']:
-                                    if not caption or len(data['content']) > len(caption):
-                                        caption = data['content']
-                                        found_tweet_data = True
-                                        logger.info(f"Found caption: {caption[:80]}...")
-                                
-                                # Extract author info
-                                if 'author' in data:
-                                    author = data['author']
-                                    if isinstance(author, dict):
-                                        if 'name' in author:
-                                            display_name = author['name']
-                                        if 'nick' in author:
-                                            username = author['nick']
-                                
-                                # Extract engagement metrics
-                                if 'favorite_count' in data:
-                                    likes = max(likes, data.get('favorite_count', 0))
-                                if 'quote_count' in data:
-                                    retweets = max(retweets, data.get('quote_count', 0) + data.get('retweet_count', 0))
-                                if 'reply_count' in data:
-                                    replies = max(replies, data.get('reply_count', 0))
-                                
-                                # Extract date
-                                if 'date' in data and not date_str:
-                                    date_str = str(data['date'])[:8]  # YYYYMMDD format
-                                
-                                # Extract image URL if present
-                                if 'url' in data:
-                                    img_url = data['url']
-                                    # Only add if it's an image URL
-                                    if isinstance(img_url, str) and ('pbs.twimg.com' in img_url or 'twimg.com/media' in img_url):
-                                        # Try to get original quality
-                                        if '?format=' in img_url and '&name=' in img_url:
-                                            img_url = re.sub(r'&name=\w+', '&name=orig', img_url)
-                                        if img_url not in images:
-                                            images.append(img_url)
-                                            logger.info(f"Added image {len(images)}: {img_url[:80]}")
-                                
-                                # Alternative: check for filename (image files)
-                                if 'filename' in data and 'extension' in data:
-                                    ext = data.get('extension', '').lower()
-                                    if ext in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
-                                        if 'url' in data and data['url'] not in images:
-                                            images.append(data['url'])
-                                            logger.info(f"Added image from filename: {data['url'][:80]}")
-                                
-                            except json.JSONDecodeError as je:
-                                logger.warning(f"Failed to parse JSON line {i}: {je}")
-                                continue
-                            except Exception as e:
-                                logger.warning(f"Error processing JSON line {i}: {e}")
-                                continue
-                        
-                        # If we found any data, return it
-                        if found_tweet_data or images:
-                            metadata = {
-                                "username": username,
-                                "display_name": display_name,
-                                "caption": self._truncate_caption(caption) if caption else f"Post by @{username}",
-                                "avatar_url": f"https://twitter.com/{username}",
-                                "likes": likes,
-                                "retweets": retweets,
-                                "comments": replies,
-                                "views": 0,
-                                "timestamp": self._format_timestamp(date_str) if date_str else datetime.now().strftime("%b %d, %Y"),
-                                "post_url": url,
-                                "post_id": post_id,
-                                "has_video": False,
-                                "images": images[:4]  # Max 4 images
-                            }
-                            
-                            logger.info(f"✓ gallery-dl extraction successful!")
-                            logger.info(f"  Caption: {len(metadata['caption'])} chars")
-                            logger.info(f"  Images: {len(images)}")
-                            logger.info(f"  Display name: {display_name}")
-                            return metadata
-                        else:
-                            logger.warning("gallery-dl returned data but couldn't extract tweet content or images")
-                        
-                    except Exception as e:
-                        logger.error(f"Failed to parse gallery-dl output: {e}", exc_info=True)
-                    
-            except FileNotFoundError:
-                logger.warning("gallery-dl not found, trying yt-dlp as fallback...")
-            except Exception as e:
-                logger.warning(f"gallery-dl failed with exception: {e}")
-            
-            # Try yt-dlp as secondary fallback
-            try:
-                logger.info("Attempting yt-dlp metadata extraction for non-video tweet...")
-                result = subprocess.run(
-                    ["yt-dlp", "--dump-json", "--skip-download", "--no-check-certificate", "--ignore-errors", url],
-                    capture_output=True,
-                    text=True,
-                    timeout=30
-                )
-                
-                logger.info(f"yt-dlp exit code: {result.returncode}")
-                logger.info(f"yt-dlp stdout length: {len(result.stdout)}")
-                if result.stderr:
-                    logger.warning(f"yt-dlp stderr: {result.stderr[:500]}")
-                
-                if result.stdout and result.stdout.strip():
-                    try:
-                        data = json.loads(result.stdout)
-                        logger.info(f"Successfully parsed JSON. Keys: {list(data.keys())[:20]}")
-                        
-                        # Extract images if available - try multiple fields
-                        images = []
-                        
-                        # Method 1: Check thumbnails
-                        thumbnails = data.get('thumbnails', [])
-                        logger.info(f"Found {len(thumbnails)} thumbnails")
-                        if thumbnails:
-                            for thumb in thumbnails:
-                                url_val = thumb.get('url', '')
-                                if url_val and 'pbs.twimg.com' in url_val:
-                                    # Convert to larger size if possible
-                                    if ':small' in url_val:
-                                        url_val = url_val.replace(':small', ':large')
-                                    elif ':thumb' in url_val:
-                                        url_val = url_val.replace(':thumb', ':large')
-                                    images.append(url_val)
-                                    logger.info(f"Added image from thumbnail: {url_val[:80]}")
-                        
-                        # Method 2: Check for direct image URLs in various fields
-                        for field in ['thumbnail', 'image', 'thumbnail_url']:
-                            if field in data and data[field]:
-                                url_val = data[field]
-                                if 'pbs.twimg.com' in url_val and url_val not in images:
-                                    images.append(url_val)
-                                    logger.info(f"Added image from {field}: {url_val[:80]}")
-                        
-                        # Get caption - try multiple fields
-                        caption = (
-                            data.get('description') or 
-                            data.get('title') or 
-                            data.get('alt_title') or
-                            data.get('fulltitle') or
-                            ''
-                        )
-                        logger.info(f"Extracted caption: {caption[:100] if caption else 'None'}")
-                        
-                        # Get avatar URL
-                        avatar_url = (
-                            data.get("uploader_avatar") or 
-                            data.get("channel_avatar") or 
-                            data.get("avatar") or
-                            data.get("thumbnail")
-                        )
-                        
-                        metadata = {
-                            "username": data.get("uploader_id", username),
-                            "display_name": data.get("uploader", username),
-                            "caption": self._truncate_caption(caption) if caption else f"Post by @{username}",
-                            "avatar_url": avatar_url if avatar_url else f"https://twitter.com/{username}",
-                            "likes": data.get("like_count", 0) or 0,
-                            "retweets": data.get("repost_count", 0) or 0,
-                            "comments": data.get("comment_count", 0) or 0,
-                            "views": data.get("view_count", 0) or 0,
-                            "timestamp": self._format_timestamp(data.get("upload_date", "")),
-                            "post_url": url,
-                            "post_id": post_id,
-                            "has_video": False,
-                            "images": images[:4]  # Max 4 images
-                        }
-                        
-                        logger.info(f"✓ yt-dlp fallback extraction successful - Caption: {len(metadata['caption'])} chars, Images: {len(images)}")
-                        return metadata
-                    
-                    except json.JSONDecodeError as je:
-                        logger.error(f"Failed to parse yt-dlp JSON output: {je}")
-                        logger.error(f"Output was: {result.stdout[:500]}")
-                    
-            except Exception as e:
-                logger.warning(f"yt-dlp fallback failed with exception: {e}")
-            
-            # Final fallback - return basic metadata with note to check URL
-            logger.warning("⚠ Using minimal metadata - actual tweet content may not be available")
-            logger.warning(f"⚠ URL: {url}")
-            logger.warning("⚠ This might be due to: rate limiting, private account, or deleted tweet")
-            return {
-                "username": username,
-                "display_name": username,
-                "caption": f"Content from @{username} (Details unavailable - check if account is public)",
-                "avatar_url": f"https://twitter.com/{username}",
-                "likes": 0,
-                "retweets": 0,
-                "comments": 0,
-                "views": 0,
-                "timestamp": datetime.now().strftime("%b %d, %Y"),
-                "post_url": url,
-                "post_id": post_id,
-                "has_video": False,
-                "images": []
-            }
-            
-        except Exception as e:
-            logger.error(f"All fallback methods failed: {e}")
-            match = re.search(r'/status/(\d+)', url)
-            post_id = match.group(1) if match else "unknown"
-            username_match = re.search(r'x\.com/([^/]+)/', url) or re.search(r'twitter\.com/([^/]+)/', url)
-            username = username_match.group(1) if username_match else "unknown"
-            
-            return {
-                "username": username,
-                "display_name": username,
-                "caption": f"Tweet from @{username}",
-                "avatar_url": f"https://twitter.com/{username}",
-                "likes": 0,
-                "retweets": 0,
-                "comments": 0,
-                "views": 0,
-                "timestamp": datetime.now().strftime("%b %d, %Y"),
-                "post_url": url,
-                "post_id": post_id,
-                "has_video": False,
-                "images": []
-            }
     
     def _truncate_caption(self, caption: str) -> str:
         """Truncate caption to maximum length while preserving spacing and removing URLs."""
@@ -1091,308 +812,47 @@ class ReelGenerator:
         else:
             return str(count)
     
-    def create_tweet_screenshot(self, avatar_img: Optional[Image.Image], metadata: Dict, background_color: str = "white") -> Optional[Path]:
-        """
-        Create a stylized screenshot of a tweet (for text-only or image tweets).
-        Layout matches video overlay: avatar -> name/id -> caption -> image (if exists)
-        
-        Args:
-            avatar_img: PIL Image of circular avatar (or None).
-            metadata: Dictionary with post metadata.
-            background_color: Background color (white or black).
-            
-        Returns:
-            Path to output screenshot file or None if creation fails.
-        """
-        logger.info("Creating tweet screenshot...")
-        
-        try:
-            # Create canvas - Instagram story size
-            width = config.REEL_WIDTH
-            height = config.REEL_HEIGHT
-            
-            # Background color
-            bg_color = (255, 255, 255) if background_color.lower() == "white" else (0, 0, 0)
-            text_color = (0, 0, 0, 255) if background_color.lower() == "white" else (255, 255, 255, 255)
-            gray_color = (120, 120, 120, 255) if background_color.lower() == "white" else (180, 180, 180, 255)
-            
-            # Create image with RGBA to support emoji images
-            img = Image.new('RGBA', (width, height), bg_color + (255,))
-            draw = ImageDraw.Draw(img)
-            
-            # Load fonts - same as video overlay
-            try:
-                # Try to load fonts similar to video overlay
-                font_paths_priority = [
-                    ("/usr/share/fonts/truetype/roboto/Roboto-Bold.ttf", "/usr/share/fonts/truetype/roboto/Roboto-Regular.ttf"),
-                    ("/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf", "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"),
-                    ("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"),
-                    ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
-                ]
-                
-                font_loaded = False
-                for bold_path, regular_path in font_paths_priority:
-                    try:
-                        display_font = ImageFont.truetype(bold_path, 26)
-                        username_font = ImageFont.truetype(regular_path, 22)
-                        caption_font = ImageFont.truetype(regular_path, 28)
-                        logger.info(f"Loaded fonts: {bold_path}, {regular_path}")
-                        font_loaded = True
-                        break
-                    except:
-                        continue
-                
-                if not font_loaded:
-                    raise Exception("No suitable fonts found")
-            except:
-                # Fallback
-                logger.warning("Could not load preferred fonts, using default")
-                display_font = ImageFont.load_default()
-                username_font = display_font
-                caption_font = display_font
-            
-            # MATCH VIDEO LAYOUT: Avatar -> Name/ID -> Caption -> Image
-            # Start position similar to video
-            horizontal_margin = 100  # Same as video
-            available_width = width - (2 * horizontal_margin)
-            
-            # Starting Y position
-            start_y = 200
-            current_y = start_y
-            
-            # === AVATAR ===
-            avatar_x = horizontal_margin
-            if avatar_img:
-                avatar_y = current_y
-                img.paste(avatar_img, (avatar_x, avatar_y), avatar_img)
-                logger.info(f"Avatar pasted at ({avatar_x}, {avatar_y})")
-                
-                # Text next to avatar
-                text_x = avatar_x + avatar_img.width + 12
-                text_y = avatar_y + 5
-                
-                # Display name (bold)
-                self._draw_text_with_emoji_images(img, metadata['display_name'], (text_x, text_y), 
-                                                  display_font, text_color)
-                
-                # Username below display name (gray)
-                username_text = f"@{metadata['username']}"
-                draw.text((text_x, text_y + 30), username_text, fill=gray_color, font=username_font)
-                
-                # Move Y position below avatar
-                current_y = avatar_y + avatar_img.width + 20
-            else:
-                # No avatar - just show text
-                text_x = avatar_x
-                text_y = current_y
-                
-                # Display name (bold)
-                self._draw_text_with_emoji_images(img, metadata['display_name'], (text_x, text_y), 
-                                                  display_font, text_color)
-                
-                # Username below display name (gray)
-                username_text = f"@{metadata['username']}"
-                draw.text((text_x, text_y + 30), username_text, fill=gray_color, font=username_font)
-                
-                # Move Y position
-                current_y = text_y + 70
-            
-            # === CAPTION ===
-            caption_text = metadata.get('caption', '')
-            caption_x = horizontal_margin
-            caption_y = current_y + 30
-            
-            if caption_text:
-                logger.info("Drawing caption with emoji support")
-                # Multi-line caption support with emoji
-                self._draw_multiline_text_with_emoji_images(
-                    img,
-                    caption_text,
-                    (caption_x, caption_y),
-                    caption_font,
-                    text_color,
-                    available_width
-                )
-                
-                # Estimate caption height
-                import re
-                parts = re.split(r'( +)', caption_text)
-                temp_draw = ImageDraw.Draw(img)
-                lines_count = 1
-                current_line_parts = []
-                
-                for part in parts:
-                    test_line = ''.join(current_line_parts + [part])
-                    bbox = temp_draw.textbbox((0, 0), test_line, font=caption_font)
-                    if bbox[2] - bbox[0] <= available_width:
-                        current_line_parts.append(part)
-                    else:
-                        if current_line_parts:
-                            lines_count += 1
-                        current_line_parts = [part] if part.strip() else []
-                
-                caption_height = min(lines_count, 6) * 38  # Max 6 lines, 38px per line
-                current_y = caption_y + caption_height + 30
-            
-            # === IMAGE (if available) ===
-            images = metadata.get('images', [])
-            
-            if images:
-                logger.info(f"Processing {len(images)} tweet images...")
-                image_y = current_y + 20
-                
-                if len(images) == 1:
-                    # Single image - centered, like video
-                    try:
-                        img_response = requests.get(images[0], timeout=10)
-                        tweet_img = Image.open(io.BytesIO(img_response.content))
-                        
-                        # Resize to fit within available space
-                        max_img_width = available_width
-                        max_img_height = 800
-                        
-                        # Calculate size maintaining aspect ratio
-                        aspect = tweet_img.width / tweet_img.height
-                        if tweet_img.width > max_img_width or tweet_img.height > max_img_height:
-                            if aspect > (max_img_width / max_img_height):
-                                new_width = max_img_width
-                                new_height = int(new_width / aspect)
-                            else:
-                                new_height = max_img_height
-                                new_width = int(new_height * aspect)
-                        else:
-                            new_width = tweet_img.width
-                            new_height = tweet_img.height
-                        
-                        tweet_img = tweet_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                        
-                        # Center the image horizontally
-                        img_x = horizontal_margin + (available_width - new_width) // 2
-                        
-                        # Apply rounded corners like video
-                        tweet_img_rounded = self._apply_rounded_corners_to_image(tweet_img, radius=20)
-                        
-                        img.paste(tweet_img_rounded, (img_x, image_y), tweet_img_rounded if tweet_img_rounded.mode == 'RGBA' else None)
-                        logger.info(f"Image pasted at ({img_x}, {image_y}) with size {new_width}x{new_height}")
-                        
-                    except Exception as e:
-                        logger.warning(f"Failed to download image: {e}")
-                
-                elif len(images) >= 2:
-                    # Multiple images - show first one centered (can be enhanced later)
-                    try:
-                        img_response = requests.get(images[0], timeout=10)
-                        tweet_img = Image.open(io.BytesIO(img_response.content))
-                        
-                        # Resize to fit
-                        max_img_width = available_width
-                        max_img_height = 800
-                        aspect = tweet_img.width / tweet_img.height
-                        
-                        if aspect > (max_img_width / max_img_height):
-                            new_width = max_img_width
-                            new_height = int(new_width / aspect)
-                        else:
-                            new_height = max_img_height
-                            new_width = int(new_height * aspect)
-                        
-                        tweet_img = tweet_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                        
-                        # Center the image
-                        img_x = horizontal_margin + (available_width - new_width) // 2
-                        
-                        # Apply rounded corners
-                        tweet_img_rounded = self._apply_rounded_corners_to_image(tweet_img, radius=20)
-                        
-                        img.paste(tweet_img_rounded, (img_x, image_y), tweet_img_rounded if tweet_img_rounded.mode == 'RGBA' else None)
-                        logger.info(f"First image pasted at ({img_x}, {image_y}) - {len(images)} images available")
-                        
-                    except Exception as e:
-                        logger.warning(f"Failed to download images: {e}")
-            
-            # Convert back to RGB for saving as PNG/JPEG
-            final_img = Image.new('RGB', (width, height), bg_color)
-            final_img.paste(img, (0, 0), img)
-            
-            # Save screenshot
-            post_id = metadata.get('post_id', 'unknown')
-            output_path = self.output_dir / f"tweet_{post_id}.png"
-            final_img.save(output_path, 'PNG', quality=95)
-            
-            logger.info(f"✓ Tweet screenshot created: {output_path}")
-            return output_path
-            
-        except Exception as e:
-            logger.error(f"Failed to create tweet screenshot: {e}", exc_info=True)
-            return None
-    
-    def _apply_rounded_corners_to_image(self, img: Image.Image, radius: int = 20) -> Image.Image:
-        """Apply rounded corners to a PIL Image."""
-        # Create a mask with rounded corners
-        mask = Image.new('L', img.size, 0)
-        draw = ImageDraw.Draw(mask)
-        draw.rounded_rectangle([(0, 0), img.size], radius=radius, fill=255)
-        
-        # Apply mask
-        output = Image.new('RGBA', img.size, (0, 0, 0, 0))
-        if img.mode == 'RGBA':
-            output.paste(img, (0, 0))
-        else:
-            output.paste(img.convert('RGBA'), (0, 0))
-        output.putalpha(mask)
-        
-        return output
-    
     def create_reel_from_url(self, url: str, resolution: str = "720p", background_color: str = "white") -> Tuple[Optional[Path], dict]:
         """
-        Main orchestration method to create content from X/Twitter URL.
-        Creates video reel if tweet has video, otherwise creates screenshot.
+        Main orchestration method to create video reel from X/Twitter video URL.
+        Only supports tweets with video content.
         
         Args:
-            url: X/Twitter post URL.
-            resolution: Desired resolution (360p, 480p, 720p, 1080p) - only for videos.
+            url: X/Twitter post URL (must contain video).
+            resolution: Desired resolution (360p, 480p, 720p, 1080p).
             background_color: Background color (white or black).
             
         Returns:
             Tuple of (output_path, metadata) or (None, error_message).
         """
-        logger.info(f"Starting content creation for URL: {url} with resolution: {resolution} and background: {background_color}")
+        logger.info(f"Starting video reel creation for URL: {url} with resolution: {resolution} and background: {background_color}")
         
         try:
-            # Step 1: Extract metadata
+            # Step 1: Extract metadata (will fail if not a video tweet)
             metadata = self.extract_metadata(url)
             
             # Step 2: Prepare avatar
             avatar_img = self.prepare_avatar(metadata['avatar_url'], metadata.get('username'), background_color)
             
-            # Step 3: Check if tweet has video
-            if metadata.get('has_video', False):
-                logger.info("Tweet contains video - creating video reel")
-                # Download video with resolution
-                video_path = self.download_video(url, resolution=resolution)
-                if not video_path:
-                    logger.warning("Video download failed, creating screenshot instead")
-                    # Fallback to screenshot if video download fails
-                    output_path = self.create_tweet_screenshot(avatar_img, metadata, background_color)
-                else:
-                    # Create reel
-                    output_path = self.create_reel(video_path, avatar_img, metadata, background_color=background_color)
-            else:
-                logger.info("Tweet is text/image only - creating screenshot")
-                # Create screenshot for text/image tweets
-                output_path = self.create_tweet_screenshot(avatar_img, metadata, background_color)
+            # Step 3: Download video
+            video_path = self.download_video(url, resolution=resolution)
+            if not video_path:
+                return None, {"error": "Failed to download video from tweet"}
+            
+            # Step 4: Create reel
+            output_path = self.create_reel(video_path, avatar_img, metadata, background_color=background_color)
             
             if output_path:
-                metadata['content_type'] = 'video' if output_path.suffix == '.mp4' else 'image'
+                metadata['content_type'] = 'video'
                 return output_path, metadata
             else:
-                return None, {"error": "Failed to create content"}
+                return None, {"error": "Failed to create video reel"}
                 
         except ValueError as e:
             error_msg = str(e)
-            logger.error(f"ValueError during content creation: {error_msg}")
+            logger.error(f"ValueError during video reel creation: {error_msg}")
             return None, {"error": error_msg}
         except Exception as e:
             error_msg = f"Unexpected error: {str(e)}"
-            logger.error(f"Exception during content creation: {error_msg}")
+            logger.error(f"Exception during video reel creation: {error_msg}")
             return None, {"error": error_msg}

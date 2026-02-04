@@ -1,17 +1,20 @@
 # X to Instagram Reel Converter
 
-Convert X/Twitter videos into vertical Instagram Reels with custom overlays.
+Convert X/Twitter video posts into vertical Instagram Reels with custom overlays.
+
+> **Note:** This branch (`main`) only supports **video tweets**. For image and caption-only tweet support, use the [`image-caption-support`](../../tree/image-caption-support) branch.
 
 ## What It Does
 
-- Downloads videos from X/Twitter posts
+- Downloads videos from X/Twitter video posts
 - Converts them to vertical 1080x1920 MP4 format
 - Adds circular avatar above the video
 - Shows username, display name, and caption
-- Uses white background with the video centered
+- Uses white or black background with the video centered
 - Keeps original audio intact
 - Provides a simple web interface
 - Fast processing with optimized encoding
+- **Only works with tweets containing video content**
 
 ## Architecture
 
@@ -95,10 +98,14 @@ sudo apt install ffmpeg
    The UI will open in your browser at `http://localhost:8501`
 
 3. **Create a reel:**
-   - Paste an X/Twitter post URL (e.g., `https://x.com/username/status/1234567890`)
-   - Click "🎬 Create Reel"
+   - Paste an X/Twitter **video post** URL (e.g., `https://x.com/username/status/1234567890`)
+   - Select video quality (360p, 480p, 720p, or 1080p)
+   - Choose background color (white or black)
+   - Click "Create Reel"
    - Wait 1-3 minutes for processing
-   - Downloaour MP4 file
+   - Download your MP4 file
+
+**Important:** Only tweets with video content are supported.
 
 ### Option 2: API Only
 
@@ -111,7 +118,7 @@ Make a POST request:
 ```bash
 curl -X POST http://localhost:5000/api/create-reel \
   -H "Content-Type: application/json" \
-  -d '{"url": "https://x.com/username/status/1234567890"}'
+  -d '{"url": "https://x.com/username/status/1234567890", "resolution": "720p", "background_color": "white"}'
 ```
 
 Download the reel:
@@ -126,7 +133,9 @@ from app.reel_generator import ReelGenerator
 
 generator = ReelGenerator()
 output_path, metadata = generator.create_reel_from_url(
-    "https://x.com/username/status/1234567890"
+    "https://x.com/username/status/1234567890",
+    resolution="720p",
+    background_color="white"
 )
 
 if output_path:
@@ -206,14 +215,22 @@ pytest tests/ -v
 **FFmpeg not found**
 Make sure FFmpeg is installed and accessible. Run `ffmpeg -version` to check.
 
+**"Only video tweets are supported" error**
+This version only works with tweets containing video content. Text-only or image-only tweets are not supported in the main branch. For image/caption tweet support, switch to the [`image-caption-support`](../../tree/image-caption-support) branch.
+
 **Download fails**
-The X/Twitter URL needs to be valid and public. Also make sure the post actually has a video. You can try updating yt-dlp with `pip install -U yt-dlp`.
+The X/Twitter URL needs to be valid, public, and contain a video. You can try updating yt-dlp with `pip install -U yt-dlp`.
 
 **Slow processing or memory errors**
-Change the video preset to "ultrafast" in config.py. Also helps to close other apps and stick to shorter videos.
+Change the video preset to "ultrafast" in config.py or select a lower resolution (360p or 480p). Also helps to close other apps and stick to shorter videos.
 
 **API won't connect**
 Start the Flask backend before Streamlit. Double-check that the API_URL matches where Flask is actually running.
+
+## Branches
+
+- **`main`** - Video tweets only (current branch)
+- **`image-caption-support`** - Supports video tweets, image tweets, and text-only tweets
 
 ## License
 
