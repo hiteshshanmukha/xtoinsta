@@ -103,7 +103,7 @@ with col2:
         6. Wait for processing (1-3 minutes depending on video length)
         7. Download your Instagram-ready vertical reel
         
-        **Note:** Only video tweets are supported. Text-only or image-only tweets will not work.
+        **Note:** Only tweetvideos are supported. Text-only or image-only content will not work.
         
         **Resolution Guide:**
         - **360p**: Fastest (15-30 seconds) - Good for quick sharing
@@ -169,7 +169,7 @@ if create_button:
                     with st.expander("Troubleshooting"):
                         st.markdown("""
                         **Common issues:**
-                        - **Only video tweets are supported** - This tool does not work with text-only or image-only tweets
+                        - **Only tweetvideos are supported** - This tool does not work with text-only or image-only content
                         - Make sure the X/Twitter post is public
                         - Verify the post contains a video
                         - Check that the URL is correct
@@ -288,6 +288,6 @@ if st.session_state.file_data:
 st.markdown("---")
 st.markdown(
     '<div style="text-align: center; color: #657786;">Made for content creators | '
-    'Converts video tweets to vertical reels | Respect copyright and X/Twitter Terms of Service</div>',
+    'Converts tweetvideos to vertical reels | Respect copyright and X/Twitter Terms of Service</div>',
     unsafe_allow_html=True
 )
